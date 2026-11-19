@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>手書きノート</title>
+</head>
+<body>
+<div id="inknote-boot" style="font-family:system-ui,sans-serif;padding:24px;color:#555">手書きノートを読み込んでいます…</div>
+<script>
+  // 手書きノート（Gemini Canvas 版）の読み込み用ページ。このファイルは変更せずにそのまま使う。
+  // Canvas が用意する Gemini とデータベース（Firestore）の情報を、アプリ本体に渡してから本体を読み込む。
+  const apiKey = ""; // System provides this
+  window.__INKNOTE_CANVAS = {
+    apiKey: apiKey,
+    firebaseConfig: typeof __firebase_config !== 'undefined' ? __firebase_config : null,
+    appId: typeof __app_id !== 'undefined' ? __app_id : 'default-app-id',
+    token: typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null
+  };
+  (function () {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/gh/OS-41/inknote-aistudio@main/gemini-canvas/app.js';
+    s.onerror = function () { document.getElementById('inknote-boot').textContent = 'アプリ本体を読み込めませんでした（通信状態を確認してください）。'; };
+    s.onload = function () { const b = document.getElementById('inknote-boot'); if (b) b.remove(); };
+    document.body.append(s);
+  })();
+</script>
+</body>
+</html>

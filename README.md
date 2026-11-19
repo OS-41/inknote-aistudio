@@ -10,6 +10,9 @@ Cloudflare 版と同じ画面・機能を、Google AI Studio の Build モード
 | 関連内容の Web 検索 | Parallel の API キーがあるとき | **Gemini の Google 検索**（追加の設定なし） |
 | 公開 | Cloudflare Workers | **Cloud Run**（AI Studio から） |
 
+## Gemini Canvas 版（試作）
+API キーを使わず、開いた人それぞれの Gemini で動く版を `gemini-canvas/` に置いています。手順は [gemini-canvas/README.md](gemini-canvas/README.md) を見てください。
+
 ## 構成
 ```
 index.html           アプリ本体（Cloudflare 版と同じ）

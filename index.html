@@ -4798,7 +4798,7 @@ $('#bkIn').addEventListener('change', e => { const f = e.target.files[0]; if (f)
       si.append(h('span', { text: `クラウドに保存（${me.name} さん専用）` }), h('br'), aiLab, ' ',
         h('button', { class: 'linkbtn', text: 'AIの設定', onclick: async () => { if (await window.__inknote.aiSettings()) { aiLab.textContent = window.__inknote.aiLabel(); toast('AIの設定を保存しました'); } } }), h('br'),
         window.__inknote.changePassword ? h('button', { class: 'linkbtn', text: 'パスワード変更', onclick: () => window.__inknote.changePassword() }) : null, ' ',
-        h('button', { class: 'linkbtn', text: 'ログアウト', onclick: async () => { await flush().catch(() => {}); window.__inknote.logout(); } }));
+        window.__inknote.logout ? h('button', { class: 'linkbtn', text: 'ログアウト', onclick: async () => { await flush().catch(() => {}); window.__inknote.logout(); } }) : null);
     } else si.textContent = Store.mode === 'cloud' ? 'クラウドに保存（あなた専用）' : 'この端末のブラウザに保存（サーバーにログインするとどの端末からでも開けます）';
   }
   try { notes = await Store.list(); } catch (e) { console.error(e); notes = []; toast('ノート一覧を読み込めませんでした'); }
