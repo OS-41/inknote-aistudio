@@ -4389,12 +4389,19 @@ function runFolder(s, run, idx) {
     if (!sel.length) { toast('領域を選択してください'); return; }
     addToBody(sel.flatMap(regionNodes), `${sel.length}件の領域`);
   } });
+  // 全体の解析画像の表示・非表示（解析ごとに保存）
+  pic.style.display = run.hideImg ? 'none' : '';
+  const picBtn = h('button', { class: 'bb', text: run.hideImg ? '🖼 全体画像を表示' : '🖼 全体画像を隠す', onclick: () => {
+    run.hideImg = !run.hideImg; pic.style.display = run.hideImg ? 'none' : '';
+    picBtn.textContent = run.hideImg ? '🖼 全体画像を表示' : '🖼 全体画像を隠す'; saveSrc(s);
+  } });
+  const picBar = h('div', { class: 'row', style: 'margin:0 0 6px' }, picBtn);
   const sumAn = renderAnalysis({ summary: run.summary, points: run.points });
   const compAn = renderAnalysis({ components: run.components });
   const k = run.id;
   return fold('f:' + k, head,
     h('div', { class: 'fbody' },
-      pic,
+      picBar, pic,
       fold('t:' + k, '📄 文字起こし（全文）',
         h('div', { class: 'srcText', text: run.fullText || '（文字は見つかりませんでした）' }),
         h('div', { class: 'row', style: 'margin-top:6px' },
