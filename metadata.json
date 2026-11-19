@@ -1,0 +1,5 @@
+{
+  "name": "手書きノート",
+  "description": "iPad 向けの手書きノート。ペン・キーボード入力、白塗り暗記、一問一答・本番テスト、写真の解析、添削などを Gemini で行う。",
+  "requestFramePermissions": []
+}
