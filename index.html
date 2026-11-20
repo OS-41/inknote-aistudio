@@ -3167,7 +3167,7 @@ ${text.slice(0, 60000)}
   if (!qs.length) { toast('試験問題を作成できませんでした'); return; }
   const tot = qs.reduce((a, q) => a + q.points, 0);
   if (tot !== 100) { let acc = 0; qs.forEach((q, i) => { q.points = i === qs.length - 1 ? 100 - acc : Math.max(1, Math.round((q.points || 1) / (tot || qs.length) * 100)); acc += q.points; }); }
-  runExam({ id: uid('e'), title: ex.title || '本番テスト', limitMin: opt.min, questions: qs, answers: {} });
+  runExam({ id: uid('e'), title: ex.title || '本番テスト', limitMin: opt.timed ? opt.min : 0, questions: qs, answers: {} });
 }
 /* ---- 試験の画面：左に問題冊子、右に解答用紙 ---- */
 const SYMS = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳'.split('');   // 空欄の［ア］［イ］と区別するため丸数字
@@ -3252,7 +3252,8 @@ function runExam(ex) {
   const subBtn = h('button', { class: 'btn pri', text: '提出', onclick: () => submit(false) });
   ov.right.append(timer, subBtn);
   const tick = () => {
-    const left = limit - Math.floor((Date.now() - start) / 1000);
+    const el = Math.floor((Date.now() - start) / 1000), left = limit - el;
+    if (!limit) { timer.textContent = `経過 ${Math.floor(el / 60)}:${String(el % 60).padStart(2, '0')}`; return; }   // 制限時間なし
     timer.textContent = `残り ${Math.floor(Math.max(0, left) / 60)}:${String(Math.max(0, left) % 60).padStart(2, '0')}`;
     timer.classList.toggle('warn', left <= 60);
     if (left <= 0 && !examSubmitted) { toast('時間になりました。自動で提出します'); submit(true); }
@@ -3278,7 +3279,7 @@ function runExam(ex) {
   }
   async function doSubmit() {
     examSubmitted = true; clearInterval(tm); subBtn.disabled = true;
-    ex.usedSec = Math.min(limit, Math.round((Date.now() - start) / 1000));
+    ex.usedSec = limit ? Math.min(limit, Math.round((Date.now() - start) / 1000)) : Math.round((Date.now() - start) / 1000);
     ex.results = {};
     const toAI = [];
     for (const q of ex.questions) {
@@ -3314,7 +3315,7 @@ ${toAI.map(q => `[${q.id}] 形式:${q.type} 配点:${q.points}\n問題: ${q.ques
 function showExamResult(ex) {
   const ov = overlay(ex.title + '（結果）');
   const used = ex.usedSec || 0;
-  ov.right.append(h('span', { class: 'cm', text: `${fmtDate(ex.at)} · 所要 ${Math.floor(used / 60)}分${used % 60}秒 / 制限 ${ex.limitMin}分` }));
+  ov.right.append(h('span', { class: 'cm', text: `${fmtDate(ex.at)} · 所要 ${Math.floor(used / 60)}分${used % 60}秒 / ${ex.limitMin ? `制限 ${ex.limitMin}分` : '制限時間なし'}` }));
   const wrap = h('div', { class: 'exam' }, h('div', { class: 'qz-score', text: `${ex.score} / 100 点` }), examMissedBox(ex));
   ex.questions.forEach((q, i) => {
     const r = ex.results[q.id] || { score: 0 }, a = ex.answers[q.id] || '';
@@ -3501,7 +3502,7 @@ ${scope}`, { images: imgs.length ? imgs : undefined, tier: 'complex', label: '�
   if (!parts.length) { toast('試験問題を作成できませんでした。もう一度お試しください'); return; }
   const all = parts.flatMap(p => p.questions), tot = all.reduce((a, q) => a + q.points, 0);
   if (tot !== 100) { let acc = 0; all.forEach((q, i) => { q.points = i === all.length - 1 ? 100 - acc : Math.max(1, Math.round((q.points || 1) / (tot || all.length) * 100)); acc += q.points; }); }
-  runPartExam({ id: uid('e'), format: 'parts', title: ex.title || '本番テスト', limitMin: opt.min, parts, answers: {} });
+  runPartExam({ id: uid('e'), format: 'parts', title: ex.title || '本番テスト', limitMin: opt.timed ? opt.min : 0, parts, answers: {} });
 }
 function qLabel(p, qi) { return `問${qi + 1}`; }
 function answerInput(q, part, ex) {
@@ -3545,7 +3546,8 @@ function runPartExam(ex) {
   const subBtn = h('button', { class: 'btn pri', text: '提出', onclick: () => submit(false) });
   ov.right.append(timer, subBtn);
   const tick = () => {
-    const left = limit - Math.floor((Date.now() - start) / 1000);
+    const el = Math.floor((Date.now() - start) / 1000), left = limit - el;
+    if (!limit) { timer.textContent = `経過 ${Math.floor(el / 60)}:${String(el % 60).padStart(2, '0')}`; return; }   // 制限時間なし
     timer.textContent = `残り ${Math.floor(Math.max(0, left) / 60)}:${String(Math.max(0, left) % 60).padStart(2, '0')}`;
     timer.classList.toggle('warn', left <= 60);
     if (left <= 0 && !submitted) { toast('時間になりました。自動で提出します'); submit(true); }
@@ -3573,7 +3575,7 @@ function runPartExam(ex) {
   }
   async function grade() {
     submitted = true; clearInterval(tm); subBtn.disabled = true;
-    ex.usedSec = Math.min(limit, Math.round((Date.now() - start) / 1000));
+    ex.usedSec = limit ? Math.min(limit, Math.round((Date.now() - start) / 1000)) : Math.round((Date.now() - start) / 1000);
     ex.results = {}; const toAI = [];
     for (const q of allQ()) {
       const a = ex.answers[q.id];
@@ -3621,7 +3623,7 @@ function fmtAns(q, a) {
 function showPartResult(ex) {
   const ov = overlay(ex.title + '（結果）');
   const used = ex.usedSec || 0;
-  ov.right.append(h('span', { class: 'cm', text: `${fmtDate(ex.at)} · 所要 ${Math.floor(used / 60)}分${used % 60}秒 / 制限 ${ex.limitMin}分` }));
+  ov.right.append(h('span', { class: 'cm', text: `${fmtDate(ex.at)} · 所要 ${Math.floor(used / 60)}分${used % 60}秒 / ${ex.limitMin ? `制限 ${ex.limitMin}分` : '制限時間なし'}` }));
   const wrap = h('div', { class: 'exam' }, h('div', { class: 'qz-score', text: `${ex.score} / 100 点` }));
   // 大問ごとの得点
   wrap.append(examMissedBox(ex) || '', h('div', { class: 'psum' }, ex.parts.map((p, pi) => { const g = p.questions.reduce((a, q) => a + ((ex.results[q.id] || {}).score || 0), 0), t = p.questions.reduce((a, q) => a + q.points, 0); return h('span', { class: 'chip', text: `第${pi + 1}問 ${g}/${t}` }); })));
@@ -3739,7 +3741,7 @@ function examMissedBox(ex) {
   return h('div', { class: 'card', style: 'max-width:760px;margin:0 auto 18px' }, h('div', { class: 'ct', text: `この回で間違えた語句（${ws.length}）` }), h('div', { class: 'chips' }, [...new Set(ws)].map(w => h('span', { class: 'chip', text: w }))));
 }
 
-let examOpt = { fmt: 'parts', per: 1, qn: 4, min: 30, count: 15, level: 'std', calc: 'auto', src: false, ink: true, focus: true, rel: true, cross: false };
+let examOpt = { fmt: 'parts', per: 1, qn: 4, timed: true, min: 30, count: 15, level: 'std', calc: 'auto', src: false, ink: true, focus: true, rel: true, cross: false };
 function segPick(list, cur, on) { return h('div', { class: 'seg', style: 'flex-wrap:wrap' }, list.map(([k, lab]) => h('button', { class: 'tb' + (cur === k ? ' on' : ''), text: lab, onclick: () => on(k) }))); }
 function renderStudyTab(body) {
   const items = maskItems();
@@ -3774,7 +3776,8 @@ function renderStudyTab(body) {
   // 本番テスト
   const len = examScopeText(examOpt.src).replace(/\s/g, '').length;
   body.append(h('div', { class: 'sec', text: '本番テスト' }));
-  const minIn = h('input', { type: 'number', min: 1, max: 300, value: examOpt.min, style: 'width:90px' });
+  const minIn = h('input', { type: 'number', min: 1, max: 300, value: examOpt.min, style: 'width:90px', disabled: !examOpt.timed });
+  const cTimed = h('input', { type: 'checkbox', checked: examOpt.timed }); cTimed.onchange = () => { examOpt.timed = cTimed.checked; minIn.disabled = !cTimed.checked; };
   minIn.oninput = () => { examOpt.min = Math.max(1, Math.min(300, parseInt(minIn.value) || 30)); };
   const cSrc = h('input', { type: 'checkbox', checked: examOpt.src, disabled: !checkedSrcs().length }); cSrc.onchange = () => { examOpt.src = cSrc.checked; renderPanel(); };
   const cFoc = h('input', { type: 'checkbox', checked: examOpt.focus, disabled: !items.length }); cFoc.onchange = () => { examOpt.focus = cFoc.checked; };
@@ -3786,7 +3789,7 @@ function renderStudyTab(body) {
   const cCross = h('input', { type: 'checkbox', checked: examOpt.cross && nHead >= 2, disabled: nHead < 2 }); cCross.onchange = () => { examOpt.cross = cCross.checked; };
   body.append(
     h('div', { class: 'cm', style: 'margin-bottom:8px', text: `学習内容 ${len.toLocaleString()} 字` + (examOpt.ink && nInk2 && imgAI ? ` ＋ 手書き ${nInk2} 画` : '') + (!examReady(examOpt) ? `（${EXAM_MIN_CHARS}字以上、または手書き${INK_EXAM_MIN}画以上で作成できます）` : '') }),
-    h('div', { class: 'row' }, h('span', { class: 'cm', text: '制限時間' }), minIn, h('span', { class: 'cm', text: '分' })),
+    h('div', { class: 'row' }, h('label', { class: 'cm', style: 'display:flex;align-items:center;gap:4px' }, cTimed, '制限時間を設定する'), minIn, h('span', { class: 'cm', text: '分' })),
     h('div', { class: 'cm', style: 'margin-top:8px', text: '形式' }), segPick([['parts', '大問形式'], ['flat', '小問集合']], examOpt.fmt, k => { examOpt.fmt = k; renderPanel(); }),
     examOpt.fmt === 'parts' ? h('div', null,
       h('div', { class: 'cm', style: 'margin-top:8px', text: (() => { const n = noteSections().filter(x => x.heading).length; return n ? `大問の区切り（本文の見出し ${n} 個）` : '大問の区切り（見出しがないため、内容のまとまりで自動的に分けます）'; })() }),
@@ -3803,7 +3806,7 @@ function renderStudyTab(body) {
     body.append(h('div', { class: 'sec', text: `テスト履歴（${study.exams.length}回）` }));
     const list = h('div');
     const show = n => { list.textContent = ''; for (const ex of study.exams.slice(0, n)) list.append(h('div', { class: 'card row', style: 'justify-content:space-between;flex-wrap:nowrap' },
-      h('div', { style: 'min-width:0' }, h('div', { class: 'ct', text: ex.title }), h('div', { class: 'cm', text: `${fmtDate(ex.at)} · ${ex.format === 'parts' ? `大問${(ex.parts || []).length}・` : ''}${examQCount(ex)}問 · 制限${ex.limitMin}分${ex.pending ? ' · 未採点あり' : ''}` }),
+      h('div', { style: 'min-width:0' }, h('div', { class: 'ct', text: ex.title }), h('div', { class: 'cm', text: `${fmtDate(ex.at)} · ${ex.format === 'parts' ? `大問${(ex.parts || []).length}・` : ''}${examQCount(ex)}問 · ${ex.limitMin ? `制限${ex.limitMin}分` : '制限時間なし'}${ex.pending ? ' · 未採点あり' : ''}` }),
         (ex.words || []).some(x => !x.ok) ? h('div', { class: 'cm', style: 'margin-top:2px', text: '× ' + [...new Set(ex.words.filter(x => !x.ok).map(x => x.w))].slice(0, 6).join('・') }) : null),
       h('div', { class: 'row', style: 'flex-wrap:nowrap' }, h('b', { style: 'font-size:18px;white-space:nowrap', text: ex.score + '点' }), h('button', { class: 'bb', text: '見直す', onclick: () => openExamResult(ex) }))));
       if (study.exams.length > n) list.append(h('button', { class: 'bb', style: 'width:100%', text: `さらに表示（残り ${study.exams.length - n} 回）`, onclick: () => show(n + 10) }));
