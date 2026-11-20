@@ -1535,11 +1535,34 @@ function updateAIButtons() {
   $('#bChart').title = ok ? '図表・グラフを生成' : 'AIが使えません（サーバーでAIが設定されていません）';
 }
 function parseJSON(text) {
-  let t = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+  const raw = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+  let t = raw;
   const a = t.indexOf('{'), b = t.lastIndexOf('}');
   if (a >= 0 && b > a) t = t.slice(a, b + 1);
-  return JSON.parse(t);
+  try { return JSON.parse(t); } catch (e) { const r = repairJSON(raw); if (r) return r; throw e; }
 }
+// 出力が途中で切れた JSON を、最後に閉じた要素までで切って括弧を閉じる（読めなければ null）
+function repairJSON(t) {
+  const a = t.indexOf('{'); if (a < 0) return null;
+  t = t.slice(a);
+  const st = []; let inS = false, esc = false, cuts = [];
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (inS) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inS = false; continue; }
+    if (c === '"') inS = true;
+    else if (c === '{' || c === '[') st.push(c === '{' ? '}' : ']');
+    else if (c === '}' || c === ']') { st.pop(); cuts.push([i + 1, st.slice()]); if (!st.length) break; }
+  }
+  for (let k = cuts.length - 1; k >= Math.max(0, cuts.length - 30); k--) {
+    const [pos, stack] = cuts[k];
+    try { const o = JSON.parse(t.slice(0, pos).replace(/,\s*$/, '') + stack.reverse().join('')); if (o && typeof o === 'object') { o.__cut = true; return o; } } catch {}
+  }
+  return null;
+}
+// 分量を減らして作り直す価値のある失敗か（出力が切れた・長すぎる・時間切れ・混雑以外の上流エラー）
+const retryLite = e => !!e && e.name !== 'AbortError' && !['aborted', 'cancelled', 'no_ai', 'not_granted', 'rate_limited', 'no_key', 'no_ai_selected', 'no_model', 'no_base', 'ai_auth'].includes(e.code)
+  && (e.code === 'bad_json' || /time ?out|timed out|時間|長すぎ|too long|context|token|5\d\d|upstream|応答/i.test(String(e.message || '')));
+const LITE_RULE = '- 【分量を抑える】出力が長くなりすぎないよう、小問は合計12問程度まで、cloze は1題（空欄10個程度）まで、解説は各1文にする。知識項目はすべて問わなくてよい（残りは別に追加する）。';
 async function askJSON(prompt, { images, tier = 'default', label = 'AIが処理中…' } = {}) {
   if (!sample) throw { code: 'no_ai', message: 'AIが使えません（サーバーでAIが設定されていないか、ログインしていません）' };
   const b = busy(label);
@@ -2836,7 +2859,7 @@ async function createExam(opt) {
   let items = [];
   try { items = await knowledgeItems(opt, imgs); } catch (e) { if (e && (e.name === 'AbortError' || e.code === 'aborted')) { aiError(e); return; } console.warn('knowledge items', e); }
   let ex;
-  try {
+  for (let lite = false; ; lite = true) try {
     ex = await askJSON(`以下の学習内容から、本番形式の試験を作ってください。出力は JSON オブジェクトのみ。
 {"title":"試験タイトル","questions":[{"id":"q1","type":"mc|tf|short|essay|calc|tfset|tfcombo|order|match|multi|cloze","ask":"define|tfchoice（該当するときだけ）","covers":["K1"],"points":配点,"lead":"問題の前に示す題材（任意）","leadStyle":"dialog|notes|material|record","figure":図表（任意）,"question":"問題文","choices":["mc のときだけ4つ"],"answer":"mc: 正しい選択肢の文字列 / tf: ○ か × / short: 正答 / essay: 模範解答","accept":["short のときだけ：正解とする別表記"],"rubric":"essay のときだけ：採点基準（要素と配点）","keyword":"この問題で問うている重要語句（1語）","explanation":"解説（1〜2文）"}]}
 計算問題（calc）の形：${CALC_SCHEMA}
@@ -2858,19 +2881,22 @@ ${relText ? relRule(opt, true) : ''}
 ${examInkRule(imgs)}
 ${words.length ? '- 次の重要語句（学習者が暗記用に隠した語）を重点的に出題する（それ以外の部分からも出題する）：' + words.slice(0, 80).join('、') : ''}
 ${coverRule(opt, items)}
+${lite ? LITE_RULE : ''}
 学習内容:
 <<<
-${text.slice(0, 60000)}
->>>${relText ? '\n' + relText : ''}`, { images: imgs.length ? imgs : undefined, tier: 'complex', label: '本番テストを作成中…' });
-  } catch (e) { aiError(e); return; }
+${text.slice(0, lite ? 30000 : 60000)}
+>>>${relText && !lite ? '\n' + relText : ''}`, { images: imgs.length ? imgs : undefined, tier: 'complex', label: lite ? '分量を減らして作り直し中…' : '本番テストを作成中…' });
+    if (!normFlatQs(ex.questions).length && !lite) { console.warn('empty exam', ex); continue; }
+    break;
+  } catch (e) { if (lite || !retryLite(e)) { aiError(e); return; } console.warn('exam retry', e); toast('テストの作成に失敗したため、分量を減らして作り直します', 4000); }
   const qs = normFlatQs(ex.questions);
   // 網羅：まだ問われていない知識項目があれば、追加の問題を作る
   if (items.length && opt.cover === 'all') {
-    for (let round = 0; round < 3; round++) {
+    for (let round = 0; round < 5; round++) {
       const asked = itemHits({ kitems: items, questions: qs, results: {} });
       const left = items.filter(x => !asked.has(x.id));
       if (left.length < 3) break;
-      try { const more = await extraCoverage(left.slice(0, 40), opt, true); qs.push(...normFlatQs(more.questions)); } catch (e) { console.warn('extra coverage', e); break; }
+      try { const more = await extraCoverage(left.slice(0, 25), opt, true); qs.push(...normFlatQs(more.questions)); } catch (e) { console.warn('extra coverage', e); break; }
     }
     qs.forEach((q, i) => { q.id = 'q' + (i + 1); });
   }
@@ -3130,14 +3156,14 @@ async function knowledgeItems(opt, imgs) {
   const sig = hashStr(text + '|' + (imgs.length ? inkCount() : 0));
   if (study.kitems && study.kitems.sig === sig && (study.kitems.items || []).length) return study.kitems.items;
   const chars = text.replace(/\s/g, '').length;
-  const n = Math.max(12, Math.min(150, Math.round(chars / 70) + (imgs.length ? 10 : 0)));
+  const n = Math.max(12, Math.min(100, Math.round(chars / 80) + (imgs.length ? 10 : 0)));
   const words = maskItems().map(m => m.w);
   const r = await askJSON(`次の学習内容から、学習者が覚えておくべき知識事項をもれなく列挙してください。出力は JSON オブジェクトのみ。
-{"items":[["事項（語句・人物・年代・公式など。短く）","種類","覚える内容（40字以内）",重要度,"見出し"]]}
+{"items":[["事項（語句・人物・年代・公式など。短く）","種類","覚える内容（30字以内）",重要度,"見出し"]]}
 - 種類：用語 / 人物 / 出来事 / 年代・数値 / 公式・法則 / 分類・構成 / 順序・手順 / 因果・理由 / 特徴・性質 / その他
 - 重要度：3（中心となる事項）/ 2（重要）/ 1（細かい事項）
 - 学習内容に書かれていることだけを挙げる。1つの事項には1つの知識だけを入れ（まとめすぎない）、重複させない。
-- 目安は ${n} 個（内容が少なければ少なくてよく、多ければ最大 ${Math.min(180, n + 30)} 個）。学習内容の最初から最後までまんべんなく拾う。
+- 目安は ${n} 個（内容が少なければ少なくてよく、多ければ最大 ${Math.min(120, n + 20)} 個）。学習内容の最初から最後までまんべんなく拾う。
 - 見出し：その事項が書かれている本文の見出し（なければ空）。
 ${words.length ? '- 次の語句（学習者が暗記用に隠した語）は必ず含める：' + words.slice(0, 120).join('、') : ''}
 ${imgs.length ? '- ' + INK_NOTE + ' 手書き（添付画像）の内容からも拾う。' : ''}
@@ -3159,7 +3185,8 @@ function coverRule(opt, items) {
   const list = items.map(x => `${x.id}｜${x.term}｜${x.fact}${x.imp >= 3 ? '｜重要' : ''}`).join('\n');
   const tag = `- 各小問に、その問いで確認する知識項目の id を "covers":["K1",…] で付ける。cloze の空欄・tfset/tfcombo の文・match の組・order の項目には、それぞれの "k"（order は itemK）にも id を付ける。`;
   let how;
-  if (opt.cover === 'all') how = `- 網羅：上の知識項目を【すべて】少なくとも1回は問う（未出題の項目を残さない）。項目が多いときは、cloze（1題で空欄10〜20個）・tfset・match・一問一答形式の短答を並べた小問集合を使い、1問で複数の項目を確かめて網羅する。このために小問数・問題数を目安より増やしてよい。`;
+  if (opt.cover === 'all' && items.length > 45) how = `- 網羅：上の知識項目のうち、重要度の高いものを中心に最大45項目を問う（残りの項目はこのあと別の問題で追加するので、ここで無理に詰め込まない）。cloze（1題で空欄10〜20個）・tfset・match を使い、1問で複数の項目を確かめる。`;
+  else if (opt.cover === 'all') how = `- 網羅：上の知識項目を【すべて】少なくとも1回は問う（未出題の項目を残さない）。項目が多いときは、cloze（1題で空欄10〜20個）・tfset・match・一問一答形式の短答を並べた小問集合を使い、1問で複数の項目を確かめて網羅する。このために小問数・問題数を目安より増やしてよい。`;
   else {
     const weak = items.filter(x => { const s = kstatOf(x); return !s || s.last === 'x'; }).map(x => x.id);
     how = `- 網羅：重要度の高い項目を中心に、知識項目の6割以上を問う。${weak.length && weak.length < items.length ? 'これまでに出題されていない・間違えた次の項目を優先する：' + weak.slice(0, 80).join('、') : ''}`;
@@ -3540,7 +3567,7 @@ async function createPartExam(opt) {
   if (opt.src && checkedSrcs().length) scope += `\n参考資料（各大問の題材の補足として使ってよい）:\n<<<${srcBundle(checkedSrcs(), 8000, 30000)}>>>`;
   if (relText) scope += '\n' + relText;
   let ex;
-  try {
+  for (let lite = false; ; lite = true) try {
     ex = await askJSON(`以下の学習内容から、大問形式の本番テストを作ってください。出力は JSON オブジェクトのみ。
 {"title":"試験タイトル","parts":[{"id":"P1","heading":"大問の題","intro":"大問の指示文（例：次の文章を読み、後の問いに答えよ。）","style":"explain|dialog|notes|material|record|data|set","passage":"題材の文章（set のときは空）","figure":図表（任意）,"wordBank":["語群（語群選択の小問があるときのみ）"],"questions":[小問,…]}]}
 passage の書き方：style に合わせて書く。空欄は［ア］［イ］…、下線部は【①語句】【②語句】…の形で書く。空欄にした語は passage に残さない。
@@ -3568,17 +3595,20 @@ ${NUM_RULE}
 ${examInkRule(imgs) ? examInkRule(imgs) + '内容に合う大問に組み込むか、手書きの内容だけで大問を1つ作ってよい。' : ''}
 ${words.length ? '- 次の重要語句（学習者が暗記用に隠した語）を優先して出題する（それ以外の部分からも出題する）：' + words.slice(0, 80).join('、') : ''}
 ${coverRule(only ? { ...opt, cover: 'all' } : opt, items)}
-${scope}`, { images: imgs.length ? imgs : undefined, tier: 'complex', label: '大問形式のテストを作成中…' });
-  } catch (e) { aiError(e); return; }
+${lite ? LITE_RULE : ''}
+${lite ? scope.slice(0, 40000) : scope}`, { images: imgs.length ? imgs : undefined, tier: 'complex', label: lite ? '分量を減らして作り直し中…' : '大問形式のテストを作成中…' });
+    if (!normParts(ex.parts).length && !lite) { console.warn('empty exam', ex); continue; }
+    break;
+  } catch (e) { if (lite || !retryLite(e)) { aiError(e); return; } console.warn('exam retry', e); toast('テストの作成に失敗したため、分量を減らして作り直します', 4000); }
   let parts = normParts(ex.parts);
   // 網羅：まだ問われていない知識項目があれば、それを問う大問を追加する（第1問「基本事項の確認」として）
   if (items.length && (opt.cover === 'all' || only)) {
     const add = [];
-    for (let round = 0; round < 3; round++) {
+    for (let round = 0; round < 5; round++) {
       const asked = itemHits({ format: 'parts', kitems: items, parts: [...add, ...parts], results: {} });
       const left = items.filter(x => !asked.has(x.id));
       if (left.length < 3) break;
-      try { const more = await extraCoverage(left.slice(0, 40), opt, false); add.push(...normParts(more.parts)); } catch (e) { console.warn('extra coverage', e); break; }
+      try { const more = await extraCoverage(left.slice(0, 25), opt, false); add.push(...normParts(more.parts)); } catch (e) { console.warn('extra coverage', e); break; }
     }
     if (add.length) { const merged = { id: 'P0', heading: '基本事項の確認', intro: '次の問いに答えよ。', style: 'set', passage: '', figure: null, wordBank: shuffle([...new Set(add.flatMap(p => p.wordBank))]), questions: add.flatMap(p => p.questions) }; parts = [merged, ...parts]; }
     parts.forEach((p, pi) => { p.id = 'P' + (pi + 1); p.questions.forEach((q, qi) => { q.id = `P${pi + 1}-${qi + 1}`; }); });
