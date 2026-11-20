@@ -506,6 +506,21 @@ body.drawing .cmark .clabel{pointer-events:none}
 .pch{margin-top:10px;display:flex;flex-direction:column;gap:6px}
 .pch-i{display:flex;gap:10px;font-size:16px;line-height:1.6}
 .pch-i .sym,.wbank .sym{font-weight:700;color:#2f5fa8;flex:none}
+.mgrid{display:grid;grid-template-columns:1fr 1.4fr;gap:4px 18px}
+.subgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 12px}
+.subgrid.one{grid-template-columns:1fr}
+.subc{display:flex;align-items:center;gap:8px;min-width:0}
+.subl{font-weight:700;min-width:2.2em;white-space:nowrap;font-size:14px}
+.symrow.sm{gap:4px}.symrow.sm .symb{min-width:34px;height:34px;font-size:15px}
+.symrow.tf.sm .symb{min-width:40px;font-size:18px}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px 10px}
+.cgrid .qz-in.sm,.cgrid .qz-sel.sm,.subc .qz-sel.sm{flex:1;min-width:0;padding:6px 8px;font-size:15px}
+.xdl{margin-top:6px;display:flex;flex-direction:column;gap:3px;font-size:14.5px}
+.xd.ok b{color:#3f8a4f}.xd.ng b{color:#c0392b}.xd .xr{color:#c0392b;font-weight:700}
+.covbar{display:flex;height:12px;border-radius:6px;background:#e6e1d6;overflow:hidden;margin:6px 0}
+.covbar i{display:block;height:100%}.covbar i.o{background:#3f8a4f}.covbar i.n{background:#d98b6f}
+.covbox{max-width:760px;margin:0 auto 14px}
+.chip.ng{background:#fbe6e2;border-color:#e7b3a8;cursor:pointer}.chip.no{background:#efede7;color:#666;cursor:pointer}
 .wbank .chip .sym{margin-right:4px}
 @media(max-width:760px){.xsplit{grid-template-columns:1fr;grid-template-rows:minmax(0,1.2fr) minmax(0,1fr)}.xsheet{border-left:0;border-top:2px solid #c9c2b2}}
 .psg{position:relative}
@@ -2321,7 +2336,7 @@ async function runAnalysis(kind, target, withInk) {
 }
 
 /* ========== 白塗り（マスク）・確認・演習 ========== */
-const emptyStudy = () => ({ bank: {}, stats: {}, sessions: [], exams: [], gen: [] });
+const emptyStudy = () => ({ bank: {}, stats: {}, sessions: [], exams: [], gen: [], kitems: null, kstat: {} });
 let study = emptyStudy();
 let maskColor = storageGet('inknote:maskColor') || 'w';
 let studyT = 0;
@@ -3132,14 +3147,18 @@ async function createExam(opt) {
   try { relText = await relMaterial(opt); } finally { b0.done(); }
   const words = opt.focus ? maskItems().map(m => m.w) : [];
   const lv = { basic: '基礎（用語の定義・事実の確認が中心）', std: '標準（理解と簡単な応用を含む）', adv: '発展（複数の内容を結びつける応用・考察を含む）' }[opt.level];
+  let items = [];
+  try { items = await knowledgeItems(opt, imgs); } catch (e) { if (e && (e.name === 'AbortError' || e.code === 'aborted')) { aiError(e); return; } console.warn('knowledge items', e); }
   let ex;
   try {
     ex = await askJSON(`以下の学習内容から、本番形式の試験を作ってください。出力は JSON オブジェクトのみ。
-{"title":"試験タイトル","questions":[{"id":"q1","type":"mc|tf|short|essay|calc","points":配点,"lead":"問題の前に示す題材（任意）","leadStyle":"dialog|notes|material|record","figure":図表（任意）,"question":"問題文","choices":["mc のときだけ4つ"],"answer":"mc: 正しい選択肢の文字列 / tf: ○ か × / short: 正答 / essay: 模範解答","accept":["short のときだけ：正解とする別表記"],"rubric":"essay のときだけ：採点基準（要素と配点）","keyword":"この問題で問うている重要語句（1語）","explanation":"解説（1〜2文）"}]}
+{"title":"試験タイトル","questions":[{"id":"q1","type":"mc|tf|short|essay|calc|tfset|tfcombo|order|match|multi|cloze","ask":"define|tfchoice（該当するときだけ）","covers":["K1"],"points":配点,"lead":"問題の前に示す題材（任意）","leadStyle":"dialog|notes|material|record","figure":図表（任意）,"question":"問題文","choices":["mc のときだけ4つ"],"answer":"mc: 正しい選択肢の文字列 / tf: ○ か × / short: 正答 / essay: 模範解答","accept":["short のときだけ：正解とする別表記"],"rubric":"essay のときだけ：採点基準（要素と配点）","keyword":"この問題で問うている重要語句（1語）","explanation":"解説（1〜2文）"}]}
 計算問題（calc）の形：${CALC_SCHEMA}
+${XF_SCHEMA.replace(/format/g, 'type')}
 条件:
-- 問題数は ${opt.count} 問。配点の合計は 100 点。
-- 形式の目安：4択(mc) 約4割、正誤(tf) 約2割、短答(short) 約2.5割、記述(essay) 約1.5割（計算問題を入れるときはその分ほかを減らす）。
+- 問題数は ${opt.count} 問${opt.cover === 'all' ? '以上（知識項目をすべて問うために必要なら増やす）' : ''}。配点の合計は 100 点。
+- 形式の目安：4択(mc)・正誤（tf・tfset・tfcombo）・短答(short)・記述(essay)・虫食い(cloze) を中心に、並べ替え(order)・組合せ(match)・複数選択(multi) も混ぜる（計算問題を入れるときはその分ほかを減らす）。
+${xfMixRule(true)}
 ${calcRule(opt.calc)}
 ${NUM_RULE}
 - 難易度：${lv}。
@@ -3152,27 +3171,390 @@ ${relText ? relRule(opt, true) : ''}
 - 数式は $…$（LaTeX）で書く。
 ${examInkRule(imgs)}
 ${words.length ? '- 次の重要語句（学習者が暗記用に隠した語）を重点的に出題する（それ以外の部分からも出題する）：' + words.slice(0, 80).join('、') : ''}
+${coverRule(opt, items)}
 学習内容:
 <<<
 ${text.slice(0, 60000)}
 >>>${relText ? '\n' + relText : ''}`, { images: imgs.length ? imgs : undefined, tier: 'complex', label: '本番テストを作成中…' });
   } catch (e) { aiError(e); return; }
-  const qs = (ex.questions || []).filter(q => q && q.question && ['mc', 'tf', 'short', 'essay', 'calc'].includes(q.type)).map((q, i) => {
+  const qs = normFlatQs(ex.questions);
+  // 網羅：まだ問われていない知識項目があれば、追加の問題を作る
+  if (items.length && opt.cover === 'all') {
+    for (let round = 0; round < 3; round++) {
+      const asked = itemHits({ kitems: items, questions: qs, results: {} });
+      const left = items.filter(x => !asked.has(x.id));
+      if (left.length < 3) break;
+      try { const more = await extraCoverage(left.slice(0, 40), opt, true); qs.push(...normFlatQs(more.questions)); } catch (e) { console.warn('extra coverage', e); break; }
+    }
+    qs.forEach((q, i) => { q.id = 'q' + (i + 1); });
+  }
+  if (!qs.length) { toast('試験問題を作成できませんでした'); return; }
+  scalePoints(qs);
+  runExam({ id: uid('e'), title: ex.title || '本番テスト', limitMin: opt.timed ? opt.min : 0, questions: qs, answers: {}, kitems: items });
+}
+function normFlatQs(raw) {
+  return (Array.isArray(raw) ? raw : []).filter(q => q && (q.question || isX(q.type)) && ['mc', 'tf', 'short', 'essay', 'calc', ...XF].includes(q.type)).map((q, i) => {
     q.id = 'q' + (i + 1); q.points = Number(q.points) || 0;
+    if (isX(q.type)) return normX(q, q.type);
     if (q.type === 'mc') { let ch = [...new Set((q.choices || []).map(String))]; if (!ch.includes(String(q.answer))) ch = [String(q.answer), ...ch]; q.choices = shuffle(ch.slice(0, 4)); }
     if (q.type === 'tf') q.answer = /^(○|◯|o|true|正)/i.test(String(q.answer)) ? '○' : '×';
     if (q.type === 'calc') { q.answer = String(q.answer ?? q.value ?? ''); q.unit = String(q.unit || '').trim(); }
     return q;
-  });
-  if (!qs.length) { toast('試験問題を作成できませんでした'); return; }
-  const tot = qs.reduce((a, q) => a + q.points, 0);
-  if (tot !== 100) { let acc = 0; qs.forEach((q, i) => { q.points = i === qs.length - 1 ? 100 - acc : Math.max(1, Math.round((q.points || 1) / (tot || qs.length) * 100)); acc += q.points; }); }
-  runExam({ id: uid('e'), title: ex.title || '本番テスト', limitMin: opt.timed ? opt.min : 0, questions: qs, answers: {} });
+  }).filter(Boolean).map((q, i) => { q.id = 'q' + (i + 1); return q; });
+}
+// 網羅のための追加問題（まだ問われていない知識項目だけ）
+async function extraCoverage(left, opt, flat) {
+  const list = left.map(x => `${x.id}｜${x.term}｜${x.fact}`).join('\n');
+  const shape = flat
+    ? `{"questions":[小問（type は short / mc / tfset / match / cloze / order など）]}`
+    : `{"parts":[{"id":"P1","heading":"基本事項の確認","intro":"次の問いに答えよ。","style":"set","passage":"","wordBank":[],"questions":[小問（format は short / mc / tfset / match / cloze / order など）]}]}`;
+  return askJSON(`学習内容の知識の確認テストに、次の知識項目をすべて問う問題を追加してください。出力は JSON オブジェクトのみ。
+${shape}
+小問の形：{"id":"…","${flat ? 'type' : 'format'}":"…","covers":["K1"],"points":配点,"question":"問題文","choices":["mc のとき4つ"],"answer":"正答","accept":["short のとき別表記"],"keyword":"問うている語句","explanation":"解説（1文）"}
+${flat ? XF_SCHEMA.replace(/format/g, 'type') : XF_SCHEMA}
+- 下の知識項目を1つ残らず問う。cloze（空欄10〜20個）・tfset・match を使って、少ない問題数でまとめて確かめる。1問だけの短答の羅列にはしない。
+- 各小問の covers と、空欄・文・組の k に知識項目の id を付ける。
+- 学習内容に書かれていることだけから出題し、答えが一意に定まるようにする。問題文に答えを書かない。数式は $…$（LaTeX）。
+知識項目（id｜事項｜内容）:
+<<<
+${list}
+>>>
+学習内容（参考）:
+<<<
+${examScopeText(opt.src).slice(0, 30000)}
+>>>`, { tier: 'complex', label: `出題されていない事項の問題を追加中…（${left.length}件）` });
+}
+/* ---- 知識の網羅（覚えるべき事項の洗い出し）と、追加の解答形式 ---- */
+// 追加の形式：tfset 正誤（各文）/ tfcombo 正誤の組合せ / order 並べ替え / match 組合せ・分類 / multi 複数選択 / cloze 大量の虫食い
+const XF_LABEL = { tfset: '正誤（各文）', tfcombo: '正誤の組合せ', order: '並べ替え', match: '組合せ', multi: '複数選択', cloze: '虫食い' };
+const XF = Object.keys(XF_LABEL);
+const LETTERS = 'abcdefghijklmnopqrst'.split('');
+const XYZ = ['X', 'Y', 'Z'];
+const isX = f => XF.includes(f);
+const noPick = v => v === '' || v == null;
+function hashStr(s) { let x = 5381; for (let i = 0; i < s.length; i++) x = ((x << 5) + x + s.charCodeAt(i)) | 0; return (x >>> 0).toString(36) + '.' + s.length; }
+function xfDefaultQ(q, f) {
+  const n = f === 'tfset' || f === 'tfcombo' ? q.statements.length : f === 'match' ? q.pairs.length : f === 'cloze' ? q.blanks.length : 0;
+  return {
+    tfset: `次の文 a〜${LETTERS[n - 1]} について、正しければ○、誤っていれば×を答えよ。`,
+    tfcombo: `次の文 ${XYZ.slice(0, n).join('・')} の正誤の組合せとして正しいものを一つ選べ。`,
+    order: '次の事項を正しい順に並べよ。',
+    match: `次の a〜${LETTERS[n - 1]} に対応するものを、それぞれ選べ。`,
+    multi: '次のうち、正しいものをすべて選べ。',
+    cloze: `次の文章の空欄［1］〜［${n}］に入る語句を${q.mode === 'bank' ? '語群から選び、記号で' : ''}答えよ。`
+  }[f] || '';
+}
+const XF_SCHEMA = `追加の解答形式（format）。小問の共通項目（id・points・question・keyword・explanation・covers）に加えて、形式ごとに次を付ける：
+- 語彙の説明（ask は "define"。format は essay / short / mc）：記述は「〜とは何か、説明せよ」（essay。maxChars 20〜80、rubric に必要な要素）。選択は「〜の説明として最も適当なものを一つ選べ」（mc。誤りの選択肢はまぎらわしい別の語の説明や一部だけ誤った説明）。説明文を示して語句を答えさせる short も可。
+- 正文・誤文の選択（ask は "tfchoice"。format は mc）：「次のうち、正しいもの（誤っているもの）を一つ選べ」。choices は4つの文。
+- tfset（正誤・各文）："statements":[{"s":"文","a":"○ か ×","k":"K1"},…]（3〜6文。×の文は1か所だけを誤らせる）。
+- tfcombo（正誤の組合せ）："statements":[{"s":"文","a":"○ か ×","k":"K1"},…]（2〜3文。X・Y・Z の正誤の組合せを選ばせる。選択肢はアプリが作るので choices は不要）。
+- order（並べ替え・年代整序）："items":["正しい順で1番目","2番目",…]（3〜6個。年代順・手順の順・大小の順など、順序が一意に決まるもの）、"orderBy":"何の順か（例：古いものから順）"、"itemK":["K1",…]（items と同じ順の項目 id）。
+- match（組合せ・分類）："pairs":[["語句","対応する説明・人物・分類など","K1"],…]（3〜8組）、"extra":["どれにも対応しないまぎらわしいもの（0〜2個）"]。分類（同じ分類に複数の語句が当てはまる）にするときは "classify":true。
+- multi（複数選択）："choices":["…"]（5〜6個）、"answers":["正しい選択肢そのまま（2つ以上）",…]。「あてはまるものをすべて選べ」。
+- cloze（大量の虫食い）："text":"学習内容をまとめ直した文章。重要な語句 10〜20 か所を［1］［2］…（1 から順の番号）の空欄にする。空欄にした語は文章に残さない","blanks":[{"answer":"［1］の正答","accept":["別表記"],"k":"K1"},…（番号順。空欄の数と同じ）],"mode":"bank（語群から記号で選ぶ）か write（語句を書く）","bankExtra":["mode が bank のとき、語群に加えるまぎらわしい語（4〜8個）"]。points は空欄の数に合わせて多めにする。`;
+function xfMixRule(flat) {
+  return `- 知識が身についているかを確かめるため、次の形式を必ず含める：語彙の説明（記述 essay と選択 mc の両方）、正誤（正文・誤文の選択、tfset、tfcombo のうち2種類以上）、大量の虫食い（cloze。${flat ? '1〜2題' : 'テスト全体で1〜3題'}。write と bank の両方を出す。1題の空欄は10〜20個）。順序のある内容があれば並べ替え（order）、対応関係・分類があれば組合せ（match）、複数の正解がある内容なら複数選択（multi）も使う。年代・数値・人物と業績などの対応も問う。`;
+}
+// AI の出力を検査し、表示・採点に必要な形に整える（使えなければ null）
+function normX(q, f) {
+  const r = normX0(q, f);
+  if (r && !String(r.question || '').trim()) r.question = xfDefaultQ(r, f);
+  return r;
+}
+function normX0(q, f) {
+  const stmts = arr => (Array.isArray(arr) ? arr : []).map(x => typeof x === 'string' ? { s: x, a: '○' } : (x || {}))
+    .map(x => ({ s: String(x.s ?? x.text ?? '').trim(), a: /^(○|◯|o|true|正)/i.test(String(x.a ?? x.answer ?? '')) ? '○' : '×', k: x.k ? String(x.k) : '' })).filter(x => x.s);
+  if (f === 'tfset') {
+    q.statements = stmts(q.statements).slice(0, 8); if (q.statements.length < 2) return null;
+    q.answer = q.statements.map((x, i) => LETTERS[i] + x.a).join(' '); return q;
+  }
+  if (f === 'tfcombo') {
+    const s = stmts(q.statements).slice(0, 3); if (s.length < 2) return null;
+    q.statements = s; const L = XYZ.slice(0, s.length), combos = [];
+    for (let m = 0; m < (1 << s.length); m++) combos.push(L.map((l, i) => `${l} ${(m >> (s.length - 1 - i)) & 1 ? '誤' : '正'}`).join('　'));
+    q.choices = combos; q.answer = L.map((l, i) => `${l} ${s[i].a === '○' ? '正' : '誤'}`).join('　'); return q;
+  }
+  if (f === 'order') {
+    const it = (Array.isArray(q.items) ? q.items : []).map(x => String(x ?? '').trim()).filter(Boolean).slice(0, 8);
+    if (it.length < 3) return null;
+    let sh, guard = 0; do { sh = shuffle(it.map((_, i) => i)); } while (sh.every((v, i) => v === i) && ++guard < 20);
+    q.items = it; q.shown = sh;   // shown[j] = 表示 j 番目の項目が、正しい順の何番目か
+    q.itemK = Array.isArray(q.itemK) ? q.itemK.map(String) : [];
+    q.orderBy = String(q.orderBy || '').trim();
+    q.answer = it.map((_, i) => symOf(sh.indexOf(i))).join(' → '); return q;
+  }
+  if (f === 'match') {
+    const pr = (Array.isArray(q.pairs) ? q.pairs : []).map(p => Array.isArray(p) ? p : p && typeof p === 'object' ? [p.left ?? p.term, p.right ?? p.match, p.k] : [])
+      .filter(p => p[0] && p[1]).map(p => [String(p[0]).trim(), String(p[1]).trim(), p[2] ? String(p[2]) : '']).slice(0, 10);
+    if (pr.length < 2) return null;
+    q.pairs = pr; q.rights = shuffle([...new Set([...pr.map(p => p[1]), ...(Array.isArray(q.extra) ? q.extra : []).map(String).filter(Boolean)])]);
+    q.classify = !!q.classify || new Set(pr.map(p => p[1])).size < pr.length;
+    q.answer = pr.map((p, i) => `${LETTERS[i]}-${symOf(q.rights.indexOf(p[1]))}`).join(' '); return q;
+  }
+  if (f === 'multi') {
+    const ans = [...new Set((Array.isArray(q.answers) ? q.answers : []).map(String))];
+    const ch = [...new Set((Array.isArray(q.choices) ? q.choices : []).map(String))];
+    ans.forEach(a => { if (!ch.includes(a)) ch.push(a); });
+    if (!ans.length || ch.length < 3) return null;
+    q.choices = shuffle(ch.slice(0, 8)); q.answers = ans.filter(a => q.choices.includes(a)); if (!q.answers.length) return null;
+    q.answer = q.choices.map((c, j) => q.answers.includes(c) ? symOf(j) : '').filter(Boolean).join('・'); return q;
+  }
+  if (f === 'cloze') {
+    const text = String(q.text || q.passage || '');
+    const nums = [...text.matchAll(/［\s*(\d+)\s*］/g)].map(m => +m[1]);
+    const bl = (Array.isArray(q.blanks) ? q.blanks : []).map(b => typeof b === 'string' ? { answer: b } : (b || {}))
+      .map(b => ({ answer: String(b.answer ?? '').trim(), accept: (Array.isArray(b.accept) ? b.accept : []).map(String), k: b.k ? String(b.k) : '' }));
+    const n = Math.min(bl.length, nums.length ? Math.max(...nums) : 0);
+    if (n < 3 || bl.slice(0, n).some(b => !b.answer)) return null;
+    q.text = text.replace(/［\s*(\d+)\s*］/g, '［$1］'); q.blanks = bl.slice(0, n); q.mode = q.mode === 'write' ? 'write' : 'bank';
+    if (q.mode === 'bank') q.bank = shuffle([...new Set([...q.blanks.map(b => b.answer), ...(Array.isArray(q.bankExtra) ? q.bankExtra : []).map(String).filter(Boolean)])]).slice(0, 50);
+    q.answer = q.blanks.map((b, i) => `［${i + 1}］${b.answer}`).join('　'); return q;
+  }
+  return q;
+}
+const symList = (arr, symFn, cls = 'pch') => h('div', { class: cls }, arr.map((t, j) => h('div', { class: 'pch-i' }, h('span', { class: 'sym', text: symFn(j) }), h('span', { text: t }))));
+// 問題冊子側（記号つきの文・選択肢・語群など）
+function paperX(q, f) {
+  if (f === 'tfset') return symList(q.statements.map(s => s.s), j => LETTERS[j]);
+  if (f === 'tfcombo') return h('div', null, symList(q.statements.map(s => s.s), j => XYZ[j]), symList(q.choices, symOf));
+  if (f === 'order') return h('div', null, q.orderBy ? h('div', { class: 'cm', style: 'margin-top:6px', text: `（${q.orderBy}に並べよ）` }) : null, symList(q.shown.map(i => q.items[i]), symOf));
+  if (f === 'match') return h('div', { class: 'mgrid' }, symList(q.pairs.map(p => p[0]), j => LETTERS[j]), symList(q.rights, symOf),
+    q.classify ? h('div', { class: 'cm', style: 'grid-column:1/-1', text: '（同じ記号を何度選んでもよい）' }) : null);
+  if (f === 'multi') return h('div', null, h('div', { class: 'cm', style: 'margin-top:6px', text: '（あてはまるものをすべて選べ）' }), symList(q.choices, symOf));
+  if (f === 'cloze') return h('div', { style: 'margin-top:8px' }, renderPassage(q.text, 'explain'),
+    q.mode === 'bank' ? h('div', { class: 'wbank' }, h('b', { text: '語群' }), q.bank.map((w, j) => h('span', { class: 'chip' }, h('span', { class: 'sym', text: symOf(j) }), w))) : h('div', { class: 'cm', text: '（語句を書いて答えよ）' }));
+  return null;
+}
+// 解答用紙側（記号を選ぶ・語句を書く欄だけ）
+function sheetX(q, f, set, symPick) {
+  const st = { v: '' };
+  const put = (key, i, v) => { st[key][i] = v; st.v = st[key].some(x => !noPick(x) && String(x).trim() !== '') ? '1' : ''; set({ ...st, [key]: [...st[key]] }); };
+  const cell = (lab, el) => h('div', { class: 'subc' }, h('span', { class: 'subl', text: lab }), el);
+  if (f === 'tfcombo') return symPick(q.choices.map((_, j) => symOf(j)), q.choices, set);
+  if (f === 'tfset') { st.s = q.statements.map(() => ''); return h('div', { class: 'subgrid' }, q.statements.map((_, i) => cell(LETTERS[i], symPick(['○', '×'], ['○', '×'], v => put('s', i, v), 'tf sm')))); }
+  if (f === 'order') { st.seq = q.items.map(() => ''); return h('div', { class: 'subgrid one' }, q.items.map((_, i) => cell(`${i + 1}番目`, symPick(q.items.map((_, j) => symOf(j)), q.items.map((_, j) => j), v => put('seq', i, v), 'sm')))); }
+  if (f === 'match') {
+    st.m = q.pairs.map(() => '');
+    return h('div', { class: 'subgrid one' }, q.pairs.map((_, i) => {
+      if (q.rights.length <= 8) return cell(LETTERS[i], symPick(q.rights.map((_, j) => symOf(j)), q.rights.map((_, j) => j), v => put('m', i, v), 'sm'));
+      const sel = h('select', { class: 'qz-sel sm' }, h('option', { value: '', text: '—' }), q.rights.map((_, j) => h('option', { value: j, text: symOf(j) })));
+      sel.onchange = () => put('m', i, sel.value === '' ? '' : +sel.value); return cell(LETTERS[i], sel);
+    }));
+  }
+  if (f === 'multi') {
+    st.set = [];
+    const g = h('div', { class: 'symrow' });
+    q.choices.forEach((_, j) => { const b = h('button', { class: 'symb', type: 'button', text: symOf(j) }); b.onclick = () => { b.classList.toggle('sel'); st.set = $$('.symb', g).map((x, k) => x.classList.contains('sel') ? k : -1).filter(k => k >= 0); st.v = st.set.length ? '1' : ''; set({ ...st, set: [...st.set] }); }; g.append(b); });
+    return h('div', null, g, h('div', { class: 'cm fx-n', text: 'あてはまるものをすべて選ぶ' }));
+  }
+  if (f === 'cloze') {
+    st.b = q.blanks.map(() => '');
+    return h('div', { class: 'cgrid' }, q.blanks.map((_, i) => {
+      let el;
+      if (q.mode === 'bank') { el = h('select', { class: 'qz-sel sm' }, h('option', { value: '', text: '—' }), q.bank.map((_, j) => h('option', { value: j, text: symOf(j) }))); el.onchange = () => put('b', i, el.value); }
+      else { el = h('input', { type: 'text', class: 'qz-in sm', autocomplete: 'off' }); el.oninput = () => put('b', i, el.value); }
+      return cell(`［${i + 1}］`, el);
+    }));
+  }
+  return null;
+}
+// 採点。{score, sub:[各空欄・各文の正誤], unsure:[AI に判定してもらう空欄の番号(0始まり)]}
+function gradeX(q, f, a) {
+  const P = q.points, o = a && typeof a === 'object' ? a : {}, frac = sub => Math.round(P * sub.filter(Boolean).length / Math.max(1, sub.length));
+  if (f === 'tfcombo') {
+    const pick = String(a || ''), mine = pick.split('　'), right = q.answer.split('　');
+    return { score: pick === q.answer ? P : 0, sub: right.map((x, i) => !!pick && mine[i] === x), comment: pick ? '' : '未解答' };
+  }
+  if (f === 'tfset') { const sub = q.statements.map((s, i) => (o.s || [])[i] === s.a); return { score: frac(sub), sub }; }
+  if (f === 'order') { const seq = o.seq || []; const ok = q.items.every((_, i) => !noPick(seq[i]) && q.shown[seq[i]] === i); return { score: ok ? P : 0, sub: q.items.map(() => ok), comment: ok || !o.v ? '' : '順序が正しくありません' }; }
+  if (f === 'match') { const sub = q.pairs.map((p, i) => { const j = (o.m || [])[i]; return !noPick(j) && q.rights[j] === p[1]; }); return { score: frac(sub), sub }; }
+  if (f === 'multi') {
+    const sel = new Set(o.set || []), want = q.choices.map((c, j) => q.answers.includes(c) ? j : -1).filter(j => j >= 0);
+    const ok = sel.size === want.length && want.every(j => sel.has(j));
+    return { score: ok ? P : 0, sub: [ok], comment: ok || !sel.size ? '' : `正答は ${q.answer}（過不足なく選んだときだけ正解）` };
+  }
+  if (f === 'cloze') {
+    const b = o.b || [], sub = [], unsure = [];
+    q.blanks.forEach((bl, i) => {
+      const v = String(b[i] ?? '').trim();
+      if (q.mode === 'bank') sub.push(v !== '' && q.bank[+v] === bl.answer);
+      else if (!v) sub.push(false);
+      else if ([bl.answer, ...bl.accept].map(norm).includes(norm(v))) sub.push(true);
+      else { sub.push(false); unsure.push(i); }
+    });
+    return { score: frac(sub), sub, unsure };
+  }
+  return { score: 0 };
+}
+// 書いて答える虫食いで、表記の違いなど自動で判定できなかった空欄を AI に見てもらう
+function clozeAIText(q, a) {
+  const b = (a && a.b) || [], un = (gradeX(q, 'cloze', a).unsure || []);
+  return `[${q.id}] 形式:cloze（虫食い・語句を書く）\n` + un.map(i => `［${i + 1}］ 正答: ${q.blanks[i].answer} ／ 受験者: ${b[i]}`).join('\n');
+}
+function applyClozeAI(q, r, okList) {
+  const sub = [...(r.sub || [])];
+  (Array.isArray(okList) ? okList : []).forEach(n => { const i = Number(n) - 1; if (i >= 0 && i < sub.length) sub[i] = true; });
+  return { ...r, sub, unsure: [], pending: false, score: Math.round(q.points * sub.filter(Boolean).length / Math.max(1, sub.length)) };
+}
+const CLOZE_AI_RULE = `- cloze（虫食い）：示した空欄ごとに、受験者の語句が正答と同じ意味（表記ゆれ・同義語・ひらがな書きなど）なら正解。"ok":[正解とした空欄の番号] を返す（score は不要）。`;
+// 解答の表示（結果画面）
+function ansX(q, f, a) {
+  const o = a && typeof a === 'object' ? a : {};
+  if (f === 'tfcombo') return String(a || '');
+  if (!o.v) return '';
+  if (f === 'tfset') return q.statements.map((_, i) => LETTERS[i] + ((o.s || [])[i] || '－')).join(' ');
+  if (f === 'order') return (o.seq || []).map(j => noPick(j) ? '－' : symOf(j)).join(' → ');
+  if (f === 'match') return q.pairs.map((_, i) => { const j = (o.m || [])[i]; return `${LETTERS[i]}-${noPick(j) ? '－' : symOf(+j)}`; }).join(' ');
+  if (f === 'multi') return [...(o.set || [])].sort((x, y) => x - y).map(symOf).join('・');
+  if (f === 'cloze') return `${(o.b || []).filter(x => String(x).trim() !== '').length} / ${q.blanks.length} か所に記入`;
+  return '';
+}
+// 結果画面の内訳（空欄・文・組ごとの正誤）
+function detailX(q, f, a, r) {
+  const sub = r.sub || [], o = a && typeof a === 'object' ? a : {};
+  const line = (ok, lab, mine, right) => h('div', { class: 'xd ' + (ok ? 'ok' : 'ng') }, h('b', { text: (ok ? '○ ' : '× ') + lab }), ' ', h('span', { text: mine }), ok ? null : h('span', { class: 'xr', text: ' → ' + right }));
+  let rows = [];
+  if (f === 'cloze') rows = q.blanks.map((b, i) => { const v = String((o.b || [])[i] ?? '').trim(); return line(sub[i], `［${i + 1}］`, !v ? '（未記入）' : q.mode === 'bank' ? `${symOf(+v)} ${q.bank[+v] ?? ''}` : v, b.answer); });
+  else if (f === 'tfset' || f === 'tfcombo') rows = q.statements.map((s, i) => line(!!sub[i], (f === 'tfset' ? LETTERS : XYZ)[i] + '　' + s.s, f === 'tfset' ? `（あなた：${(o.s || [])[i] || '－'}）` : '', s.a === '○' ? '正しい' : '誤り'));
+  else if (f === 'match') rows = q.pairs.map((p, i) => { const j = (o.m || [])[i]; return line(sub[i], `${LETTERS[i]}　${p[0]}`, noPick(j) ? '（未選択）' : `${symOf(+j)} ${q.rights[+j] ?? ''}`, p[1]); });
+  else if (f === 'order') rows = [h('div', { class: 'cm', text: '正しい順：' }), ...q.items.map((it, i) => h('div', { class: 'xd' }, `${i + 1}. ${it}`))];
+  else if (f === 'multi') rows = q.choices.map((c, j) => { const want = q.answers.includes(c), got = (o.set || []).includes(j); return h('div', { class: 'xd ' + (want === got ? 'ok' : 'ng') }, h('b', { text: `${symOf(j)} ${want ? '○' : '　'}` }), ' ', c, got ? h('span', { class: 'cm', text: '（あなたが選択）' }) : null); });
+  return h('div', null, h('details', { class: 'pd' }, h('summary', { text: '問題の文・選択肢を表示' }), paperX(q, f)), h('div', { class: 'xdl' }, rows));
+}
+// テストの語句ごとの正誤（間違えた語句の集計用）
+function qWords(ex, q) {
+  const r = (ex.results || {})[q.id] || {}, sub = r.sub || [], f = q.format || q.type, full = (r.score || 0) >= q.points;
+  if (f === 'cloze') return q.blanks.map((b, i) => ({ w: b.answer.length <= 20 ? b.answer : '', ok: !!sub[i] })).filter(x => x.w);
+  if (f === 'match') return q.pairs.map((p, i) => ({ w: p[0].length <= 20 ? p[0] : '', ok: !!sub[i] })).filter(x => x.w);
+  const w = keywordOf(q); return w ? [{ w, ok: full }] : [];
+}
+// 配点を合計 100 点にそろえる（最大剰余法）
+function scalePoints(qs) {
+  const tot = qs.reduce((a, q) => a + (Number(q.points) || 0), 0);
+  if (tot === 100 && qs.every(q => q.points > 0)) return;
+  const w = qs.map(q => Math.max(0.5, Number(q.points) || 1)), W = w.reduce((a, b) => a + b, 0);
+  const raw = w.map(x => x / W * 100), base = raw.map(Math.floor); let rest = 100 - base.reduce((a, b) => a + b, 0);
+  raw.map((x, i) => [x - base[i], i]).sort((a, b) => b[0] - a[0]).forEach(([, i]) => { if (rest > 0) { base[i]++; rest--; } });
+  qs.forEach((q, i) => { q.points = base[i]; });
+}
+// ---- 覚えるべき事項（知識項目）----
+async function knowledgeItems(opt, imgs) {
+  const text = examScopeText(opt.src);
+  const sig = hashStr(text + '|' + (imgs.length ? inkCount() : 0));
+  if (study.kitems && study.kitems.sig === sig && (study.kitems.items || []).length) return study.kitems.items;
+  const chars = text.replace(/\s/g, '').length;
+  const n = Math.max(12, Math.min(150, Math.round(chars / 70) + (imgs.length ? 10 : 0)));
+  const words = maskItems().map(m => m.w);
+  const r = await askJSON(`次の学習内容から、学習者が覚えておくべき知識事項をもれなく列挙してください。出力は JSON オブジェクトのみ。
+{"items":[["事項（語句・人物・年代・公式など。短く）","種類","覚える内容（40字以内）",重要度,"見出し"]]}
+- 種類：用語 / 人物 / 出来事 / 年代・数値 / 公式・法則 / 分類・構成 / 順序・手順 / 因果・理由 / 特徴・性質 / その他
+- 重要度：3（中心となる事項）/ 2（重要）/ 1（細かい事項）
+- 学習内容に書かれていることだけを挙げる。1つの事項には1つの知識だけを入れ（まとめすぎない）、重複させない。
+- 目安は ${n} 個（内容が少なければ少なくてよく、多ければ最大 ${Math.min(180, n + 30)} 個）。学習内容の最初から最後までまんべんなく拾う。
+- 見出し：その事項が書かれている本文の見出し（なければ空）。
+${words.length ? '- 次の語句（学習者が暗記用に隠した語）は必ず含める：' + words.slice(0, 120).join('、') : ''}
+${imgs.length ? '- ' + INK_NOTE + ' 手書き（添付画像）の内容からも拾う。' : ''}
+学習内容:
+<<<
+${text.slice(0, 60000)}
+>>>`, { images: imgs.length ? imgs : undefined, tier: imgs.length ? 'complex' : 'default', label: '覚えるべき事項を洗い出し中…' });
+  const seen = new Set();
+  const items = (Array.isArray(r.items) ? r.items : []).map(x => Array.isArray(x) ? { term: x[0], kind: x[1], fact: x[2], imp: x[3], sec: x[4] } : (x || {}))
+    .map(x => ({ term: String(x.term ?? '').trim(), kind: String(x.kind ?? '').trim(), fact: String(x.fact ?? '').trim(), imp: Math.max(1, Math.min(3, Number(x.imp) || 2)), sec: String(x.sec ?? '').trim() }))
+    .filter(x => { const k = norm(x.term); if (!k || seen.has(k)) return false; seen.add(k); return true; })
+    .slice(0, 200).map((x, i) => ({ id: 'K' + (i + 1), ...x }));
+  study.kitems = { sig, at: Date.now(), items }; saveStudy();
+  return items;
+}
+const kstatOf = x => (study.kstat || {})[norm(x.term)];
+function coverRule(opt, items) {
+  if (!items.length) return '';
+  const list = items.map(x => `${x.id}｜${x.term}｜${x.fact}${x.imp >= 3 ? '｜重要' : ''}`).join('\n');
+  const tag = `- 各小問に、その問いで確認する知識項目の id を "covers":["K1",…] で付ける。cloze の空欄・tfset/tfcombo の文・match の組・order の項目には、それぞれの "k"（order は itemK）にも id を付ける。`;
+  let how;
+  if (opt.cover === 'all') how = `- 網羅：上の知識項目を【すべて】少なくとも1回は問う（未出題の項目を残さない）。項目が多いときは、cloze（1題で空欄10〜20個）・tfset・match・一問一答形式の短答を並べた小問集合を使い、1問で複数の項目を確かめて網羅する。このために小問数・問題数を目安より増やしてよい。`;
+  else {
+    const weak = items.filter(x => { const s = kstatOf(x); return !s || s.last === 'x'; }).map(x => x.id);
+    how = `- 網羅：重要度の高い項目を中心に、知識項目の6割以上を問う。${weak.length && weak.length < items.length ? 'これまでに出題されていない・間違えた次の項目を優先する：' + weak.slice(0, 80).join('、') : ''}`;
+  }
+  return `知識項目（学習内容から洗い出した覚えるべき事項。id｜事項｜内容）:\n<<<\n${list}\n>>>\n${how}\n${tag}`;
+}
+// 各知識項目が、どの問い（空欄・文・組）で問われ、正解したか
+function itemHits(ex) {
+  const map = new Map(), add = (k, ok) => { k = String(k || '').trim(); if (!k) return; if (!map.has(k)) map.set(k, []); map.get(k).push(!!ok); };
+  const byTerm = new Map((ex.kitems || []).map(x => [norm(x.term), x.id]));
+  for (const q of examQs(ex)) {
+    const r = (ex.results || {})[q.id] || {}, full = (r.score || 0) >= q.points && q.points > 0, f = q.format || q.type, sub = r.sub || [];
+    let own = false;
+    if (f === 'cloze') q.blanks.forEach((b, i) => { const k = b.k || byTerm.get(norm(b.answer)); if (k) { add(k, sub[i]); own = true; } });
+    if (f === 'tfset' || f === 'tfcombo') q.statements.forEach((s, i) => { if (s.k) { add(s.k, sub[i]); own = true; } });
+    if (f === 'match') q.pairs.forEach((p, i) => { const k = p[2] || byTerm.get(norm(p[0])); if (k) { add(k, sub[i]); own = true; } });
+    if (f === 'order') (q.itemK || []).forEach(k => { add(k, full); own = true; });
+    if (!own) {
+      const cv = Array.isArray(q.covers) ? q.covers : [];
+      if (cv.length) cv.forEach(k => add(k, full));
+      else { const k = byTerm.get(norm(keywordOf(q))) || byTerm.get(norm(q.answer)); if (k) add(k, full); }
+    }
+  }
+  return map;
+}
+function examCoverage(ex) {
+  const items = ex.kitems || []; if (!items.length) return null;
+  const hits = itemHits(ex);
+  const st = items.map(x => { const hs = hits.get(x.id); return { ...x, st: !hs ? 'no' : hs.some(Boolean) ? 'ok' : 'ng' }; });
+  return { t: st.length, a: st.filter(x => x.st !== 'no').length, o: st.filter(x => x.st === 'ok').length, items: st };
+}
+function updateKstat(ex) {
+  const c = examCoverage(ex); if (!c) return;
+  study.kstat = study.kstat || {};
+  for (const x of c.items) {
+    if (x.st === 'no') continue;
+    const k = norm(x.term), s = study.kstat[k] || (study.kstat[k] = { w: x.term, n: 0, c: 0, last: '' });
+    s.n++; if (x.st === 'ok') s.c++; s.last = x.st === 'ok' ? 'o' : 'x'; s.at = Date.now();
+  }
+}
+const pctOf = (n, t) => t ? Math.round(n / t * 100) : 0;
+function covBar(o, a, t) { return h('div', { class: 'covbar' }, h('i', { class: 'o', style: `width:${pctOf(o, t)}%` }), h('i', { class: 'n', style: `width:${pctOf(a - o, t)}%` })); }
+const itemChip = (x, cls) => h('span', { class: 'chip ' + cls, title: x.fact, text: x.term, onclick: () => toast(`${x.term}：${x.fact || ''}`, 5000) });
+// 結果画面の「知識の網羅・定着」
+function coverageBox(ex, closeFn) {
+  const c = examCoverage(ex); if (!c) return null;
+  const ng = c.items.filter(x => x.st === 'ng'), no = c.items.filter(x => x.st === 'no');
+  return h('div', { class: 'card covbox' },
+    h('div', { class: 'ct', text: '知識の網羅・定着' }),
+    covBar(c.o, c.a, c.t),
+    h('div', { class: 'cm', text: `覚えるべき事項 ${c.t} 件のうち　出題 ${c.a} 件（網羅率 ${pctOf(c.a, c.t)}%）・正解 ${c.o} 件（定着率 ${pctOf(c.o, c.t)}%）` }),
+    ng.length ? h('div', null, h('div', { class: 'cm', style: 'margin-top:8px', text: `間違えた事項（${ng.length}）` }), h('div', { class: 'chips' }, ng.map(x => itemChip(x, 'ng')))) : null,
+    no.length ? h('div', null, h('div', { class: 'cm', style: 'margin-top:8px', text: `今回は出題されなかった事項（${no.length}）` }), h('div', { class: 'chips' }, no.map(x => itemChip(x, 'no')))) : null,
+    (ng.length || no.length) && sample ? h('button', { class: 'bb ai', style: 'margin-top:10px', text: `✦ 間違えた・未出題の事項だけでテスト（${ng.length + no.length}件）`, onclick: () => { closeFn && closeFn(); retestItems([...ng, ...no]); } }) : null);
+}
+function retestItems(list) {
+  const items = list.map(({ st, ...x }) => x);
+  if (!items.length) return;
+  createPartExam({ ...examOpt, cover: 'all', only: items, rel: false, cross: false });
+}
+// 演習タブの「覚えるべき事項の定着状況」
+function knowledgeCard() {
+  const K = study.kitems; if (!K || !(K.items || []).length) return null;
+  const its = K.items.map(x => { const s = kstatOf(x); return { ...x, st: !s ? 'no' : s.last === 'o' ? 'ok' : 'ng', s }; });
+  const ok = its.filter(x => x.st === 'ok'), ng = its.filter(x => x.st === 'ng'), no = its.filter(x => x.st === 'no');
+  const stale = K.sig !== hashStr(examScopeText(examOpt.src) + '|' + (examOpt.ink && imgAI && inkCount() ? inkCount() : 0));
+  const tbl = h('table', { class: 'stt' }, h('thead', null, h('tr', null, h('th', { text: '事項' }), h('th', { text: '内容' }), h('th', { text: '結果' }))),
+    h('tbody', null, [...ng, ...no, ...ok].map(x => h('tr', null, h('td', { text: x.term }), h('td', { class: 'cm', text: x.fact }),
+      h('td', { class: 'cm', style: 'white-space:nowrap', text: x.st === 'no' ? '未出題' : `${x.st === 'ok' ? '○' : '×'} ${x.s.c}/${x.s.n}` })))));
+  return h('div', { class: 'card' },
+    h('div', { class: 'ct', text: `覚えるべき事項 ${its.length} 件` }),
+    covBar(ok.length, ok.length + ng.length, its.length),
+    h('div', { class: 'cm', text: `直近で正解 ${ok.length} 件・直近で× ${ng.length} 件・未出題 ${no.length} 件（定着率 ${pctOf(ok.length, its.length)}%）` }),
+    stale ? h('div', { class: 'cm', style: 'margin-top:4px', text: '※ 本文が変わったため、次にテストを作るときに事項を洗い出し直します。' }) : null,
+    h('details', { class: 'pd', style: 'margin-top:6px' }, h('summary', { text: '事項の一覧' }), h('div', { class: 'tblwrap' }, tbl)),
+    ng.length + no.length && sample ? h('button', { class: 'bb ai', style: 'margin-top:8px', text: `✦ まだ定着していない事項でテスト（${ng.length + no.length}件）`, onclick: () => retestItems([...ng, ...no]) }) : null);
 }
 /* ---- 試験の画面：左に問題冊子、右に解答用紙 ---- */
-const SYMS = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳'.split('');   // 空欄の［ア］［イ］と区別するため丸数字
+const SYMS = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳㉑㉒㉓㉔㉕㉖㉗㉘㉙㉚㉛㉜㉝㉞㉟㊱㊲㊳㊴㊵㊶㊷㊸㊹㊺㊻㊼㊽㊾㊿'.split('');   // 空欄の［ア］［イ］と区別するため丸数字
 const symOf = j => SYMS[j] || String(j + 1);
-const FMT_ALL = { mc: '4択', tf: '正誤', short: '短答', essay: '記述', calc: '計算', bank: '語群選択' };
+const FMT_ALL = { mc: '4択', tf: '正誤', short: '短答', essay: '記述', calc: '計算', bank: '語群選択', ...XF_LABEL };
 // 問題冊子側の1問（操作する部品は置かない）
 function paperQ(q, label, fmt, opt = {}) {
   return h('div', { class: 'eq pq', 'data-q': q.id },
@@ -3181,6 +3563,7 @@ function paperQ(q, label, fmt, opt = {}) {
     q.figure ? figureBox(q.figure) : null,
     h('div', { class: 'eq-q', text: q.question }),
     fmt === 'mc' ? h('div', { class: 'pch' }, q.choices.map((c, j) => h('div', { class: 'pch-i' }, h('span', { class: 'sym', text: symOf(j) }), h('span', { text: c })))) : null,
+    isX(fmt) ? paperX(q, fmt) : null,
     fmt === 'tf' && opt.fix ? h('div', { class: 'cm', style: 'margin-top:6px', text: '正しければ○、誤りがあれば×を選び、誤っている語句と正しい語句を書け。' }) : null,
     fmt === 'essay' && q.maxChars ? h('div', { class: 'cm', style: 'margin-top:6px', text: `（${q.maxChars}字程度）` }) : null);
 }
@@ -3202,7 +3585,8 @@ function sheetRow(q, label, fmt, ex, opt = {}) {
     return g;
   };
   let field;
-  if (fmt === 'mc') field = symPick(q.choices.map((_, j) => symOf(j)), q.choices, set);
+  if (isX(fmt)) field = sheetX(q, fmt, set, symPick);
+  else if (fmt === 'mc') field = symPick(q.choices.map((_, j) => symOf(j)), q.choices, set);
   else if (fmt === 'bank') field = symPick(opt.bank.map((_, j) => symOf(j)), opt.bank, set, 'wide');
   else if (fmt === 'tf' && opt.fix) {
     const st = { v: '', wrong: '', right: '' };
@@ -3283,6 +3667,7 @@ function runExam(ex) {
     ex.results = {};
     const toAI = [];
     for (const q of ex.questions) {
+      if (isX(q.type)) { const g = gradeX(q, q.type, ex.answers[q.id]); ex.results[q.id] = g; if (g.unsure && g.unsure.length) { g.pending = true; toAI.push(q); } continue; }
       const a = String(ex.answers[q.id] || '');
       if (q.type === 'calc') { const g = gradeCalc(q, ex.answers[q.id]); if (g) ex.results[q.id] = g; else toAI.push(q); continue; }
       if (q.type === 'mc' || q.type === 'tf') ex.results[q.id] = { score: a === String(q.answer) ? q.points : 0 };
@@ -3296,17 +3681,19 @@ function runExam(ex) {
     if (toAI.length && sample) {
       try {
         const r = await askJSON(`次の試験の解答を採点してください。出力は JSON オブジェクトのみ。
-{"results":[{"id":"q3","score":得点,"comment":"短い講評（良い点・不足点）"}]}
+{"results":[{"id":"q3","score":得点,"comment":"短い講評（良い点・不足点）","ok":[cloze のときだけ]}]}
 - short（短答）：意味が同じ表記ゆれ・同義語は満点、誤りは0点。
+${CLOZE_AI_RULE}
 - essay（記述）：採点基準に沿って部分点をつける（0〜配点の整数）。
 - calc（計算）：最終的な答えが正答と数学的に等しければ満点（表し方の違い・妥当な丸めは可）。答えが違う場合は、途中式が採点基準のどこまで正しいかで部分点（0〜配点の整数）。comment では誤りの箇所を具体的に指摘する。
-${toAI.map(q => `[${q.id}] 形式:${q.type} 配点:${q.points}\n問題: ${q.question}\n正答・模範解答: ${q.answer}${q.unit ? ' ' + q.unit : ''}${q.steps ? '\n解き方: ' + q.steps : ''}${q.rubric ? '\n採点基準: ' + q.rubric : ''}\n受験者の解答: ${q.type === 'calc' ? fmtCalcAns(q, ex.answers[q.id]) : ex.answers[q.id]}`).join('\n\n')}`, { label: '記述問題を採点中…' });
-        for (const x of (r.results || [])) { const q = toAI.find(y => y.id === x.id); if (q) ex.results[q.id] = { score: Math.max(0, Math.min(q.points, Math.round(Number(x.score) || 0))), comment: x.comment || '' }; }
+${toAI.map(q => q.type === 'cloze' ? clozeAIText(q, ex.answers[q.id]) : `[${q.id}] 形式:${q.type} 配点:${q.points}\n問題: ${q.question}\n正答・模範解答: ${q.answer}${q.unit ? ' ' + q.unit : ''}${q.steps ? '\n解き方: ' + q.steps : ''}${q.rubric ? '\n採点基準: ' + q.rubric : ''}\n受験者の解答: ${q.type === 'calc' ? fmtCalcAns(q, ex.answers[q.id]) : ex.answers[q.id]}`).join('\n\n')}`, { label: '記述問題を採点中…' });
+        for (const x of (r.results || [])) { const q = toAI.find(y => y.id === x.id); if (!q) continue; if (q.type === 'cloze') ex.results[q.id] = applyClozeAI(q, ex.results[q.id], x.ok); else ex.results[q.id] = { score: Math.max(0, Math.min(q.points, Math.round(Number(x.score) || 0))), comment: x.comment || '' }; }
       } catch (e) { aiError(e); }
     }
     for (const q of toAI) if (!ex.results[q.id]) ex.results[q.id] = { score: 0, comment: '自動採点できませんでした（自己採点してください）', pending: true };
     ex.score = ex.questions.reduce((a, q) => a + (ex.results[q.id].score || 0), 0);
     ex.at = Date.now();
+    updateKstat(ex);
     recordExam(ex);
     ov.close(); showExamResult(ex);
     if (activeTab === 'study') renderPanel();
@@ -3316,21 +3703,22 @@ function showExamResult(ex) {
   const ov = overlay(ex.title + '（結果）');
   const used = ex.usedSec || 0;
   ov.right.append(h('span', { class: 'cm', text: `${fmtDate(ex.at)} · 所要 ${Math.floor(used / 60)}分${used % 60}秒 / ${ex.limitMin ? `制限 ${ex.limitMin}分` : '制限時間なし'}` }));
-  const wrap = h('div', { class: 'exam' }, h('div', { class: 'qz-score', text: `${ex.score} / 100 点` }), examMissedBox(ex));
+  const wrap = h('div', { class: 'exam' }, h('div', { class: 'qz-score', text: `${ex.score} / 100 点` }), coverageBox(ex, () => ov.close()), examMissedBox(ex));
   ex.questions.forEach((q, i) => {
     const r = ex.results[q.id] || { score: 0 }, a = ex.answers[q.id] || '';
     const full = r.score >= q.points, part = r.score > 0 && !full;
     const scoreEl = h('span', { class: 'esc ' + (full ? 'ok' : part ? 'pt' : 'ng'), text: `${r.score} / ${q.points}点` });
     const qb = h('div', { class: 'eq' },
-      h('div', { class: 'eq-h' }, h('b', { text: `問${i + 1}` }), h('span', { class: 'cm', text: ' ' + { mc: '4択', tf: '正誤', short: '短答', essay: '記述', calc: '計算' }[q.type] }), h('span', { class: 'sp' }), scoreEl),
+      h('div', { class: 'eq-h' }, h('b', { text: `問${i + 1}` }), h('span', { class: 'cm', text: ' ' + (FMT_ALL[q.type] || '') }), h('span', { class: 'sp' }), scoreEl),
       q.lead ? renderPassage(q.lead, q.leadStyle) : null, q.figure ? figureBox(q.figure) : null,
       h('div', { class: 'eq-q', text: q.question }),
-      h('div', { class: 'eq-a' }, h('span', { class: 'cm', text: 'あなたの解答：' }), h('span', { class: 'pre', text: (q.type === 'calc' ? fmtCalcAns(q, a) : a) || '（未解答）' })),
-      h('div', { class: 'eq-a' }, h('span', { class: 'cm', text: q.type === 'essay' ? '模範解答：' : '正答：' }), h('b', { text: String(q.answer) + (q.type === 'calc' && q.unit ? ' ' + q.unit : '') })),
+      h('div', { class: 'eq-a' }, h('span', { class: 'cm', text: 'あなたの解答：' }), h('span', { class: 'pre', text: (isX(q.type) ? ansX(q, q.type, a) : q.type === 'calc' ? fmtCalcAns(q, a) : a) || '（未解答）' })),
+      ['cloze', 'tfset', 'match'].includes(q.type) ? null : h('div', { class: 'eq-a' }, h('span', { class: 'cm', text: q.type === 'essay' ? '模範解答：' : '正答：' }), h('b', { text: String(q.answer) + (q.type === 'calc' && q.unit ? ' ' + q.unit : '') })),
+      isX(q.type) ? detailX(q, q.type, a, r) : null,
       q.type === 'calc' && q.steps ? h('div', { class: 'eq-c pre', text: '解き方：' + q.steps }) : null,
       r.comment ? h('div', { class: 'eq-c', text: r.comment }) : null,
       q.explanation ? h('div', { class: 'eq-c', text: '解説：' + q.explanation }) : null);
-    if (q.type !== 'mc' && q.type !== 'tf') {
+    if (['short', 'essay', 'calc'].includes(q.type) || (q.type === 'cloze' && q.mode === 'write')) {
       qb.append(h('div', { class: 'row', style: 'margin-top:6px' }, h('span', { class: 'cm', text: '自己採点で修正：' }),
         h('button', { class: 'bb', text: '満点', onclick: () => fix(q.points) }), q.type === 'calc' || q.type === 'essay' ? h('button', { class: 'bb', text: '半分', onclick: () => fix(Math.floor(q.points / 2)) }) : null, h('button', { class: 'bb', text: '0点', onclick: () => fix(0) })));
     }
@@ -3343,7 +3731,7 @@ function showExamResult(ex) {
 /* ---- 演習タブ ---- */
 let quizOpt = { fmt: 'mc', order: 'weak', count: 10, from: null, mat: { text: true, ink: true, src: true } };
 /* ---- 本番テスト（大問形式） ---- */
-const FMT_LABEL = { bank: '語群選択', mc: '4択', tf: '正誤', short: '記述（語句）', essay: '記述（文章）', calc: '計算' };
+const FMT_LABEL = { bank: '語群選択', mc: '4択', tf: '正誤', short: '記述（語句）', essay: '記述（文章）', calc: '計算', ...XF_LABEL };
 const KANA = 'アイウエオカキクケコ'.split('');
 // 本文を見出し（h2/h3）ごとに区切る
 function noteSections() {
@@ -3440,16 +3828,22 @@ async function createPartExam(opt) {
   if (!examReady(opt)) { toast(`本番テストは学習内容が${EXAM_MIN_CHARS}字以上（または手書きを含める）で作成できます`); return; }
   let imgs; try { imgs = await examInk(opt); } catch (e) { imgs = []; }
   const b0 = busy('題材を準備中…'); let relText = '';
-  try { relText = await relMaterial(opt); } finally { b0.done(); }
-  const plan = planParts(opt.per);
-  const words = opt.focus ? maskItems().map(m => m.w) : [];
+  try { relText = opt.only ? '' : await relMaterial(opt); } finally { b0.done(); }
+  const only = Array.isArray(opt.only) && opt.only.length ? opt.only : null;
+  if (only) relText = '';
+  const plan = only ? null : planParts(opt.per);
+  const words = opt.focus && !only ? maskItems().map(m => m.w) : [];
+  let items = only || [];
+  if (!only) { try { items = await knowledgeItems(opt, imgs); } catch (e) { if (e && (e.name === 'AbortError' || e.code === 'aborted')) { aiError(e); return; } console.warn('knowledge items', e); } }
   const lv = { basic: '基礎（用語・事実の確認が中心）', std: '標準（理解と簡単な応用を含む）', adv: '発展（複数の内容を結びつける応用・考察を含む）' }[opt.level];
   let scope;
   const nParts = plan ? plan.length : 0;
   // 大問が3つ以上のとき、ときどき第1問を小問集合にする
-  const withSet = Math.random() < 0.3 && (nParts >= 3 || (!plan && noteText().length > 3000));
+  const withSet = !only && Math.random() < 0.3 && (nParts >= 3 || (!plan && noteText().length > 3000));
   const setRule = withSet ? `- 第1問は小問集合にする（style は set、passage は空、heading は「小問集合」、intro は「次の問い（問1〜問n）に答えよ。」）。学習内容全体から、たがいに独立した短い小問を${Math.max(4, opt.qn)}問程度出す。これは下に示した大問とは別に追加し、大問番号を1つずつ後ろにずらす。` : '';
-  if (plan && opt.cross && plan.length >= 2) {
+  if (only) {
+    scope = `これは復習用のテスト。下の知識項目（前回までに間違えた・出題されなかった事項）だけを問う。大問は1〜3個（項目が少なければ1個）。各大問の小問はおよそ ${opt.qn} 問。学習内容は出題の根拠として使う。\n学習内容:\n<<<\n${noteText().slice(0, 40000)}\n>>>`;
+  } else if (plan && opt.cross && plan.length >= 2) {
     scope = `大問はおよそ ${plan.length} 個。各大問の小問はおよそ ${opt.qn} 問。見出しにとらわれず、複数の見出しの内容を横断・関連づけたテーマで大問を構成する（半数以上の大問は2つ以上の見出しの内容を組み合わせる）。全体として学習内容をまんべんなく扱う。\n学習内容:\n<<<\n${noteText().slice(0, 50000)}\n>>>`;
   } else if (plan) {
     scope = `大問は次の ${plan.length} 個。各大問はそこに示した学習内容だけから作る。各大問の小問はおよそ ${opt.qn} 問。\n` +
@@ -3465,8 +3859,9 @@ async function createPartExam(opt) {
 {"title":"試験タイトル","parts":[{"id":"P1","heading":"大問の題","intro":"大問の指示文（例：次の文章を読み、後の問いに答えよ。）","style":"explain|dialog|notes|material|record|data|set","passage":"題材の文章（set のときは空）","figure":図表（任意）,"wordBank":["語群（語群選択の小問があるときのみ）"],"questions":[小問,…]}]}
 passage の書き方：style に合わせて書く。空欄は［ア］［イ］…、下線部は【①語句】【②語句】…の形で書く。空欄にした語は passage に残さない。
 figure（任意。内容の理解や読み取り問題に役立つときだけ）：{"kind":"chart","title":"…","caption":"…","chart":Chart.js v4 の設定（関数は書かない）} / {"kind":"table","title":"…","table":{"columns":[…],"rows":[[…]]}} / {"kind":"diagram","title":"…","diagram":"Mermaid 記法"}。学習内容にない数値を使うときは caption に「例示」と書く。
-小問：{"id":"P1-1","ask":"blank|underline|related|figure|general|calc","format":"bank|mc|tf|short|essay|calc","points":配点,"question":"問題文","choices":["mc のときだけ4つ"],"answer":"bank：語群の語 / mc：正しい選択肢の文字列 / tf：○ か × / short：正答 / essay：模範解答","accept":["short のときだけ：別解"],"fix":{"wrong":"tf が×のとき：問題文中の誤っている語句（そのまま）","right":"正しい語句"},"rubric":"essay のときだけ：採点基準","maxChars":essay のときだけ字数の目安,"figure":この小問だけで使う図表（任意）,"keyword":"この小問で問うている重要語句（1語）","explanation":"解説（1〜2文）"}
+小問：{"id":"P1-1","ask":"blank|underline|related|figure|general|calc|define|tfchoice","format":"bank|mc|tf|short|essay|calc|tfset|tfcombo|order|match|multi|cloze","covers":["K1"],"points":配点,"question":"問題文","choices":["mc のときだけ4つ"],"answer":"bank：語群の語 / mc：正しい選択肢の文字列 / tf：○ か × / short：正答 / essay：模範解答","accept":["short のときだけ：別解"],"fix":{"wrong":"tf が×のとき：問題文中の誤っている語句（そのまま）","right":"正しい語句"},"rubric":"essay のときだけ：採点基準","maxChars":essay のときだけ字数の目安,"figure":この小問だけで使う図表（任意）,"keyword":"この小問で問うている重要語句（1語）","explanation":"解説（1〜2文）"}
 計算の小問（format が calc のとき）は次の項目も付ける："answer":"正答（表示用）","calc":"正答を求める計算式（数値と + - * / ^ ( ) sqrt() pi だけ）","value":正答の数値,"unit":"答えの単位","tol":許容する相対誤差,"steps":"解き方（途中式の流れ）","rubric":"途中式の部分点の基準"。問題文に必要な数値・条件と、答える形（小数第何位まで・分数で・単位）を書き、使う式・公式・法則名は書かない。passage や図表の数値を使った計算（ask: calc）にしてもよい。
+${XF_SCHEMA}
 ${VARIETY_RULE}
 大問が2つ以上あるときは2種類以上の style を使い、少なくとも1つの大問は figure（グラフ・表・図）を含める（data の大問か、他の形式に figure を添える）。小問ごとの figure で別の資料を示してもよい。
 大問の並び：番号が大きい大問ほど難しく、題材も長くする（第1問は短めで基本的、最後の大問は題材が長く、読み取りや複数の知識の組み合わせを要する）。ただし第1問と最後の大問の難しさの差は1段階程度にとどめ、離れすぎないようにする。
@@ -3474,7 +3869,9 @@ ${setRule}
 ${relText ? relRule(opt, false) : ''}
 条件：
 - 問い方に変化をつける：空欄補充（blank）、下線部の語に関連する事柄（underline）、関連知識（related）、図表の読み取り（figure。大問か小問に図表があるとき）、全体の理解（general）。
-- 解答形式も混ぜる：語群選択（bank。wordBank は正解とまぎらわしい語を含めて6〜10語）、4択（mc）、正誤（tf。×が正解の問題の一部では fix を付けて訂正も求める）、記述・語句（short）、記述・文章（essay。各大問0〜1問、maxChars は 40〜200）。
+- 解答形式も混ぜる：語群選択（bank。wordBank は正解とまぎらわしい語を含めて6〜10語）、4択（mc）、正誤（tf。×が正解の問題の一部では fix を付けて訂正も求める）、記述・語句（short）、記述・文章（essay。各大問0〜1問、maxChars は 40〜200）、および上の追加の形式（tfset・tfcombo・order・match・multi・cloze）。
+- 問い方には、語彙の説明（define）・正文／誤文の選択（tfchoice）も加える。cloze は大問の小問の1つとして出してよく、その大問の passage とは別の文章（text）を使う。
+${xfMixRule(false)}
 ${calcRule(opt.calc).replace('全体の', 'テスト全体の小問の')}
 ${NUM_RULE}
 - 問題文で空欄・下線部を指すときは「空欄［ア］」「下線部①」のように書く。
@@ -3484,25 +3881,43 @@ ${NUM_RULE}
 - 学習内容に書かれていることから出題し、答えが一意に定まるようにする。問題文に答えを書かない。
 ${examInkRule(imgs) ? examInkRule(imgs) + '内容に合う大問に組み込むか、手書きの内容だけで大問を1つ作ってよい。' : ''}
 ${words.length ? '- 次の重要語句（学習者が暗記用に隠した語）を優先して出題する（それ以外の部分からも出題する）：' + words.slice(0, 80).join('、') : ''}
+${coverRule(only ? { ...opt, cover: 'all' } : opt, items)}
 ${scope}`, { images: imgs.length ? imgs : undefined, tier: 'complex', label: '大問形式のテストを作成中…' });
   } catch (e) { aiError(e); return; }
-  const parts = (Array.isArray(ex.parts) ? ex.parts : []).map((p, pi) => {
+  let parts = normParts(ex.parts);
+  // 網羅：まだ問われていない知識項目があれば、それを問う大問を追加する（第1問「基本事項の確認」として）
+  if (items.length && (opt.cover === 'all' || only)) {
+    const add = [];
+    for (let round = 0; round < 3; round++) {
+      const asked = itemHits({ format: 'parts', kitems: items, parts: [...add, ...parts], results: {} });
+      const left = items.filter(x => !asked.has(x.id));
+      if (left.length < 3) break;
+      try { const more = await extraCoverage(left.slice(0, 40), opt, false); add.push(...normParts(more.parts)); } catch (e) { console.warn('extra coverage', e); break; }
+    }
+    if (add.length) { const merged = { id: 'P0', heading: '基本事項の確認', intro: '次の問いに答えよ。', style: 'set', passage: '', figure: null, wordBank: shuffle([...new Set(add.flatMap(p => p.wordBank))]), questions: add.flatMap(p => p.questions) }; parts = [merged, ...parts]; }
+    parts.forEach((p, pi) => { p.id = 'P' + (pi + 1); p.questions.forEach((q, qi) => { q.id = `P${pi + 1}-${qi + 1}`; }); });
+  }
+  if (!parts.length) { toast('試験問題を作成できませんでした。もう一度お試しください'); return; }
+  scalePoints(parts.flatMap(p => p.questions));
+  runPartExam({ id: uid('e'), format: 'parts', title: (only ? '復習テスト：' : '') + (ex.title || '本番テスト'), limitMin: opt.timed ? opt.min : 0, parts, answers: {}, kitems: items });
+}
+function normParts(raw) {
+  return (Array.isArray(raw) ? raw : []).map((p, pi) => {
+    p = p || {};
     const wb = Array.isArray(p.wordBank) ? [...new Set(p.wordBank.map(String))] : [];
-    const qs = (Array.isArray(p.questions) ? p.questions : []).filter(q => q && q.question && FMT_LABEL[q.format]).map((q, qi) => {
-      q.id = `P${pi + 1}-${qi + 1}`; q.points = Number(q.points) || 0; q.answer = String(q.answer ?? '');
+    const qs = (Array.isArray(p.questions) ? p.questions : []).filter(q => q && (q.question || isX(q.format)) && FMT_LABEL[q.format]).map((q, qi) => {
+      q.id = `P${pi + 1}-${qi + 1}`; q.points = Number(q.points) || 0;
+      if (isX(q.format)) return normX(q, q.format);
+      q.answer = String(q.answer ?? '');
       if (q.format === 'mc') { let ch = [...new Set((q.choices || []).map(String))]; if (!ch.includes(q.answer)) ch = [q.answer, ...ch]; q.choices = shuffle(ch.slice(0, 4)); }
       if (q.format === 'tf') { q.answer = /^(○|◯|o|true|正)/i.test(q.answer) ? '○' : '×'; if (q.answer !== '×' || !q.fix || !q.fix.right) delete q.fix; }
       if (q.format === 'bank' && !wb.includes(q.answer)) wb.push(q.answer);
       if (q.format === 'calc') { if (!q.answer && q.value != null) q.answer = String(q.value); q.unit = String(q.unit || '').trim(); }
       return q;
-    });
+    }).filter(Boolean).map((q, qi) => { q.id = `P${pi + 1}-${qi + 1}`; return q; });
     const style = PASSAGE_STYLES[p.style] !== undefined ? p.style : 'explain';
     return { id: 'P' + (pi + 1), heading: p.heading || '', intro: p.intro || '', style, passage: style === 'set' ? '' : (p.passage || ''), figure: p.figure || null, wordBank: shuffle(wb), questions: qs };
   }).filter(p => p.questions.length);
-  if (!parts.length) { toast('試験問題を作成できませんでした。もう一度お試しください'); return; }
-  const all = parts.flatMap(p => p.questions), tot = all.reduce((a, q) => a + q.points, 0);
-  if (tot !== 100) { let acc = 0; all.forEach((q, i) => { q.points = i === all.length - 1 ? 100 - acc : Math.max(1, Math.round((q.points || 1) / (tot || all.length) * 100)); acc += q.points; }); }
-  runPartExam({ id: uid('e'), format: 'parts', title: ex.title || '本番テスト', limitMin: opt.timed ? opt.min : 0, parts, answers: {} });
 }
 function qLabel(p, qi) { return `問${qi + 1}`; }
 function answerInput(q, part, ex) {
@@ -3566,7 +3981,7 @@ function runPartExam(ex) {
   ov.body.classList.add('split');
   ov.body.append(typesetIn(examSplit(paper, sheet)));
   const allQ = () => ex.parts.flatMap(p => p.questions);
-  const blankOf = q => { const a = ex.answers[q.id]; return q.format === 'tf' || q.format === 'calc' ? !(a && String(a.v || '').trim()) : !String(a || '').trim(); };
+  const blankOf = q => { const a = ex.answers[q.id]; return a && typeof a === 'object' ? !String(a.v || '').trim() : !String(a || '').trim(); };
   function submit(auto) {
     if (submitted) return;
     const blank = allQ().filter(blankOf).length;
@@ -3579,7 +3994,8 @@ function runPartExam(ex) {
     ex.results = {}; const toAI = [];
     for (const q of allQ()) {
       const a = ex.answers[q.id];
-      if (q.format === 'calc') { const g = gradeCalc(q, a); if (g) ex.results[q.id] = g; else toAI.push(q); }
+      if (isX(q.format)) { const g = gradeX(q, q.format, a); ex.results[q.id] = g; if (g.unsure && g.unsure.length) { g.pending = true; toAI.push(q); } }
+      else if (q.format === 'calc') { const g = gradeCalc(q, a); if (g) ex.results[q.id] = g; else toAI.push(q); }
       else if (q.format === 'bank' || q.format === 'mc') ex.results[q.id] = { score: String(a || '') === q.answer ? q.points : 0 };
       else if (q.format === 'tf') {
         const v = a && a.v;
@@ -3598,24 +4014,27 @@ function runPartExam(ex) {
     if (toAI.length && sample) {
       try {
         const r = await askJSON(`次の試験の解答を採点してください。出力は JSON オブジェクトのみ。
-{"results":[{"id":"P1-3","score":得点,"comment":"短い講評"}]}
+{"results":[{"id":"P1-3","score":得点,"comment":"短い講評","ok":[cloze のときだけ]}]}
 - short（記述・語句）：意味が同じ表記ゆれ・同義語は満点、誤りは0点。
+${CLOZE_AI_RULE}
 - essay（記述・文章）：採点基準に沿って部分点（0〜配点の整数）。字数の目安を大きく外れたら減点してよい。
 - tf（正誤の訂正）：正誤の判断は正しいので配点の半分は確定。訂正（誤っている箇所と正しい語句）が正しければ満点、誤りなら半分。
 - calc（計算）：最終的な答えが正答と数学的に等しければ満点（表し方の違い・妥当な丸めは可）。答えが違う場合は、途中式が採点基準のどこまで正しいかで部分点（0〜配点の整数）。comment では誤りの箇所を具体的に指摘する。
-${toAI.map(q => { const a = ex.answers[q.id]; return `[${q.id}] 形式:${q.format} 配点:${q.points}\n問題: ${q.question}\n正答・模範解答: ${q.format === 'tf' ? `× （誤:${q.fix.wrong} → 正:${q.fix.right}）` : q.answer + (q.unit ? ' ' + q.unit : '')}${q.steps ? '\n解き方: ' + q.steps : ''}${q.rubric ? '\n採点基準: ' + q.rubric : ''}${q.maxChars ? '\n字数の目安: ' + q.maxChars : ''}\n受験者の解答: ${q.format === 'tf' ? `× （誤:${a.wrong || ''} → 正:${a.right || ''}）` : q.format === 'calc' ? fmtCalcAns(q, a) : a}`; }).join('\n\n')}`, { label: '記述・訂正を採点中…' });
-        for (const x of (r.results || [])) { const q = toAI.find(y => y.id === x.id); if (q) ex.results[q.id] = { score: Math.max(0, Math.min(q.points, Math.round(Number(x.score) || 0))), comment: x.comment || '' }; }
+${toAI.map(q => { const a = ex.answers[q.id]; if (q.format === 'cloze') return clozeAIText(q, a); return `[${q.id}] 形式:${q.format} 配点:${q.points}\n問題: ${q.question}\n正答・模範解答: ${q.format === 'tf' ? `× （誤:${q.fix.wrong} → 正:${q.fix.right}）` : q.answer + (q.unit ? ' ' + q.unit : '')}${q.steps ? '\n解き方: ' + q.steps : ''}${q.rubric ? '\n採点基準: ' + q.rubric : ''}${q.maxChars ? '\n字数の目安: ' + q.maxChars : ''}\n受験者の解答: ${q.format === 'tf' ? `× （誤:${a.wrong || ''} → 正:${a.right || ''}）` : q.format === 'calc' ? fmtCalcAns(q, a) : a}`; }).join('\n\n')}`, { label: '記述・訂正を採点中…' });
+        for (const x of (r.results || [])) { const q = toAI.find(y => y.id === x.id); if (!q) continue; if (q.format === 'cloze') ex.results[q.id] = applyClozeAI(q, ex.results[q.id], x.ok); else ex.results[q.id] = { score: Math.max(0, Math.min(q.points, Math.round(Number(x.score) || 0))), comment: x.comment || '' }; }
       } catch (e) { aiError(e); }
     }
     for (const q of toAI) if (!ex.results[q.id]) ex.results[q.id] = { score: q.format === 'tf' ? Math.floor(q.points / 2) : 0, comment: '自動採点できませんでした（自己採点してください）', pending: true };
     ex.score = allQ().reduce((s, q) => s + (ex.results[q.id].score || 0), 0);
     ex.at = Date.now();
+    updateKstat(ex);
     recordExam(ex);
     ov.close(); showPartResult(ex);
     if (activeTab === 'study') renderPanel();
   }
 }
 function fmtAns(q, a) {
+  if (isX(q.format)) return ansX(q, q.format, a);
   if (q.format === 'calc') return fmtCalcAns(q, a);
   if (q.format === 'tf') return a && a.v ? a.v + (a.v === '×' && (a.wrong || a.right) ? `（${a.wrong || '？'} → ${a.right || '？'}）` : '') : '';
   return String(a || '');
@@ -3626,7 +4045,7 @@ function showPartResult(ex) {
   ov.right.append(h('span', { class: 'cm', text: `${fmtDate(ex.at)} · 所要 ${Math.floor(used / 60)}分${used % 60}秒 / ${ex.limitMin ? `制限 ${ex.limitMin}分` : '制限時間なし'}` }));
   const wrap = h('div', { class: 'exam' }, h('div', { class: 'qz-score', text: `${ex.score} / 100 点` }));
   // 大問ごとの得点
-  wrap.append(examMissedBox(ex) || '', h('div', { class: 'psum' }, ex.parts.map((p, pi) => { const g = p.questions.reduce((a, q) => a + ((ex.results[q.id] || {}).score || 0), 0), t = p.questions.reduce((a, q) => a + q.points, 0); return h('span', { class: 'chip', text: `第${pi + 1}問 ${g}/${t}` }); })));
+  wrap.append(coverageBox(ex, () => ov.close()) || '', examMissedBox(ex) || '', h('div', { class: 'psum' }, ex.parts.map((p, pi) => { const g = p.questions.reduce((a, q) => a + ((ex.results[q.id] || {}).score || 0), 0), t = p.questions.reduce((a, q) => a + q.points, 0); return h('span', { class: 'chip', text: `第${pi + 1}問 ${g}/${t}` }); })));
   ex.parts.forEach((p, pi) => {
     const sec = h('div', { class: 'part' }, h('details', { class: 'pd' }, h('summary', { text: '問題文・図表を表示' }), ...partHeader(p, pi).slice(1)));
     sec.prepend(h('div', { class: 'ph' }, h('span', { class: 'pn', text: `第${pi + 1}問` }), h('span', { text: p.heading })));
@@ -3637,12 +4056,13 @@ function showPartResult(ex) {
         h('div', { class: 'eq-h' }, h('b', { text: qLabel(p, qi) }), h('span', { class: 'cm', text: ' ' + FMT_LABEL[q.format] }), h('span', { class: 'sp' }), h('span', { class: 'esc ' + (full ? 'ok' : part ? 'pt' : 'ng'), text: `${r.score} / ${q.points}点` })),
         h('div', { class: 'eq-q', text: q.question }), figureBox(q.figure),
         h('div', { class: 'eq-a' }, h('span', { class: 'cm', text: 'あなたの解答：' }), h('span', { class: 'pre', text: fmtAns(q, a) || '（未解答）' })),
-        h('div', { class: 'eq-a' }, h('span', { class: 'cm', text: q.format === 'essay' ? '模範解答：' : '正答：' }), h('b', { text: q.answer + (q.format === 'calc' && q.unit ? ' ' + q.unit : '') + (q.fix ? `（${q.fix.wrong} → ${q.fix.right}）` : '') })),
+        ['cloze', 'tfset', 'match'].includes(q.format) ? null : h('div', { class: 'eq-a' }, h('span', { class: 'cm', text: q.format === 'essay' ? '模範解答：' : '正答：' }), h('b', { text: q.answer + (q.format === 'calc' && q.unit ? ' ' + q.unit : '') + (q.fix ? `（${q.fix.wrong} → ${q.fix.right}）` : '') })),
+        isX(q.format) ? detailX(q, q.format, a, r) : null,
         q.format === 'calc' && q.steps ? h('div', { class: 'eq-c pre', text: '解き方：' + q.steps }) : null,
         r.comment ? h('div', { class: 'eq-c', text: r.comment }) : null,
         q.explanation ? h('div', { class: 'eq-c', text: '解説：' + q.explanation }) : null);
-      if (['short', 'essay', 'tf', 'calc'].includes(q.format)) qb.append(h('div', { class: 'row', style: 'margin-top:6px' }, h('span', { class: 'cm', text: '自己採点で修正：' }),
-        h('button', { class: 'bb', text: '満点', onclick: () => fix(q.points) }), q.format !== 'short' ? h('button', { class: 'bb', text: '半分', onclick: () => fix(Math.floor(q.points / 2)) }) : null, h('button', { class: 'bb', text: '0点', onclick: () => fix(0) })));
+      if (['short', 'essay', 'tf', 'calc'].includes(q.format) || (q.format === 'cloze' && q.mode === 'write')) qb.append(h('div', { class: 'row', style: 'margin-top:6px' }, h('span', { class: 'cm', text: '自己採点で修正：' }),
+        h('button', { class: 'bb', text: '満点', onclick: () => fix(q.points) }), !['short', 'cloze'].includes(q.format) ? h('button', { class: 'bb', text: '半分', onclick: () => fix(Math.floor(q.points / 2)) }) : null, h('button', { class: 'bb', text: '0点', onclick: () => fix(0) })));
       function fix(v) { ex.results[q.id] = { ...r, score: v, pending: false }; ex.score = ex.parts.flatMap(x => x.questions).reduce((s, y) => s + (ex.results[y.id].score || 0), 0); recordExam(ex); ov.close(); showPartResult(ex); if (activeTab === 'study') renderPanel(); }
       sec.append(qb);
     });
@@ -3664,7 +4084,8 @@ function examSummary(ex) {
   return {
     id: ex.id, at: ex.at, title: ex.title, format: ex.format || 'flat', limitMin: ex.limitMin, usedSec: ex.usedSec || 0, score: ex.score, nq: qs.length,
     parts: ex.format === 'parts' ? ex.parts.map(p => ({ h: p.heading, g: p.questions.reduce((a, q) => a + ((ex.results[q.id] || {}).score || 0), 0), t: p.questions.reduce((a, q) => a + q.points, 0) })) : null,
-    words: qs.map(q => ({ w: keywordOf(q), ok: ((ex.results[q.id] || {}).score || 0) >= q.points })).filter(x => x.w),
+    words: qs.flatMap(q => qWords(ex, q)),
+    cov: (() => { const c = examCoverage(ex); return c ? { t: c.t, a: c.a, o: c.o } : null; })(),
     pending: qs.some(q => (ex.results[q.id] || {}).pending)
   };
 }
@@ -3741,7 +4162,7 @@ function examMissedBox(ex) {
   return h('div', { class: 'card', style: 'max-width:760px;margin:0 auto 18px' }, h('div', { class: 'ct', text: `この回で間違えた語句（${ws.length}）` }), h('div', { class: 'chips' }, [...new Set(ws)].map(w => h('span', { class: 'chip', text: w }))));
 }
 
-let examOpt = { fmt: 'parts', per: 1, qn: 4, timed: true, min: 30, count: 15, level: 'std', calc: 'auto', src: false, ink: true, focus: true, rel: true, cross: false };
+let examOpt = { fmt: 'parts', per: 1, qn: 4, cover: 'all', timed: true, min: 30, count: 15, level: 'std', calc: 'auto', src: false, ink: true, focus: true, rel: true, cross: false };
 function segPick(list, cur, on) { return h('div', { class: 'seg', style: 'flex-wrap:wrap' }, list.map(([k, lab]) => h('button', { class: 'tb' + (cur === k ? ' on' : ''), text: lab, onclick: () => on(k) }))); }
 function renderStudyTab(body) {
   const items = maskItems();
@@ -3797,16 +4218,20 @@ function renderStudyTab(body) {
       h('label', { class: 'cm', style: 'display:block;margin-top:6px' }, cCross, ' 見出しをまたいだ大問を作る（複数の見出しの内容を横断して出題）'),
       h('div', { class: 'cm', style: 'margin-top:8px', text: '1つの大問の小問数（目安）' }), segPick([[3, '3問'], [4, '4問'], [5, '5問'], [6, '6問']], examOpt.qn, k => { examOpt.qn = k; renderPanel(); }))
     : h('div', null, h('div', { class: 'cm', style: 'margin-top:8px', text: '問題数' }), segPick([[10, '10問'], [15, '15問'], [20, '20問'], [30, '30問']], examOpt.count, k => { examOpt.count = k; renderPanel(); })),
+    h('div', { class: 'cm', style: 'margin-top:8px', text: '網羅性' }), segPick([['all', 'すべての事項を出題'], ['std', '重要な事項を中心に']], examOpt.cover, k => { examOpt.cover = k; renderPanel(); }),
+    h('div', { class: 'cm', style: 'margin-top:2px', text: examOpt.cover === 'all' ? '本文から覚えるべき事項を洗い出し、すべてを一度は問います（問題数は目安より増えることがあります）。' : '重要な事項と、まだ出題されていない・間違えた事項を中心に出題します。' }),
     h('div', { class: 'cm', style: 'margin-top:8px', text: '難易度' }), segPick([['basic', '基礎'], ['std', '標準'], ['adv', '発展']], examOpt.level, k => { examOpt.level = k; renderPanel(); }),
     h('div', { class: 'cm', style: 'margin-top:8px', text: '計算問題' }), segPick([['auto', '内容に応じて'], ['more', '多め'], ['none', '出さない']], examOpt.calc, k => { examOpt.calc = k; renderPanel(); }),
     h('div', { class: 'checks', style: 'margin-top:8px;flex-direction:column;gap:6px' }, h('label', null, cInk, `手書きも範囲に含める（${nInk2}画${imgAI ? '' : '・画像非対応のAIのため不可'}）`), h('label', null, cRel, nRel ? `関連内容タブの内容・Webページも題材に使う（${nRel}件。発展ほど多く使う）` : '関連内容タブの内容も題材に使う（関連内容タブで「関連内容を探す」を実行すると使えます）'), h('label', null, cSrc, `参考資料（Web・画像）も範囲に含める（${checkedSrcs().length}件）`), h('label', null, cFoc, '白塗りした語句を重点的に出題（オフ：ノート全体から均等に）')),
     h('button', { class: 'btn ai', text: '✦ テストを作成して開始', disabled: !sample || !examReady(examOpt), onclick: () => examOpt.fmt === 'parts' ? createPartExam(examOpt) : createExam(examOpt) }));
+  const kc = knowledgeCard();
+  if (kc) body.append(h('div', { class: 'sec', text: '覚えるべき事項の定着状況' }), kc);
   if (study.exams.length) {
     body.append(h('div', { class: 'sec', text: `テストの得点の推移（直近${Math.min(12, study.exams.length)}回）` }), scoreChart(study.exams));
     body.append(h('div', { class: 'sec', text: `テスト履歴（${study.exams.length}回）` }));
     const list = h('div');
     const show = n => { list.textContent = ''; for (const ex of study.exams.slice(0, n)) list.append(h('div', { class: 'card row', style: 'justify-content:space-between;flex-wrap:nowrap' },
-      h('div', { style: 'min-width:0' }, h('div', { class: 'ct', text: ex.title }), h('div', { class: 'cm', text: `${fmtDate(ex.at)} · ${ex.format === 'parts' ? `大問${(ex.parts || []).length}・` : ''}${examQCount(ex)}問 · ${ex.limitMin ? `制限${ex.limitMin}分` : '制限時間なし'}${ex.pending ? ' · 未採点あり' : ''}` }),
+      h('div', { style: 'min-width:0' }, h('div', { class: 'ct', text: ex.title }), h('div', { class: 'cm', text: `${fmtDate(ex.at)} · ${ex.format === 'parts' ? `大問${(ex.parts || []).length}・` : ''}${examQCount(ex)}問 · ${ex.limitMin ? `制限${ex.limitMin}分` : '制限時間なし'}${ex.cov ? ` · 網羅${pctOf(ex.cov.a, ex.cov.t)}%・定着${pctOf(ex.cov.o, ex.cov.t)}%` : ''}${ex.pending ? ' · 未採点あり' : ''}` }),
         (ex.words || []).some(x => !x.ok) ? h('div', { class: 'cm', style: 'margin-top:2px', text: '× ' + [...new Set(ex.words.filter(x => !x.ok).map(x => x.w))].slice(0, 6).join('・') }) : null),
       h('div', { class: 'row', style: 'flex-wrap:nowrap' }, h('b', { style: 'font-size:18px;white-space:nowrap', text: ex.score + '点' }), h('button', { class: 'bb', text: '見直す', onclick: () => openExamResult(ex) }))));
       if (study.exams.length > n) list.append(h('button', { class: 'bb', style: 'width:100%', text: `さらに表示（残り ${study.exams.length - n} 回）`, onclick: () => show(n + 10) }));
