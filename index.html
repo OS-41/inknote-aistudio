@@ -69,6 +69,12 @@ main{flex:1;display:flex;min-height:0;position:relative}
 @media (max-width:1100px){#side{position:absolute;z-index:30;top:0;bottom:0;left:0;box-shadow:4px 0 24px rgba(0,0,0,.14)}}
 .side-h{display:flex;align-items:center;padding:12px 12px 8px 16px;gap:8px;font-weight:700}
 .side-h .sp{flex:1}
+.mglist{display:flex;flex-direction:column;gap:4px;max-height:46vh;overflow:auto}
+.mgi{display:flex;align-items:center;gap:10px;text-align:left;padding:8px 10px;border:1px solid #ddd6c8;border-radius:8px;background:#fff;font:inherit;cursor:pointer}
+.mgi.on{border-color:#2f5fa8;background:#eef3fb}
+.mgi .tx{display:flex;flex-direction:column;min-width:0}.mgi .tx b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mgn{flex:none;width:26px;height:26px;border-radius:50%;border:1.5px solid #b9b0a0;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff}
+.mgi.on .mgn{background:#2f5fa8;border-color:#2f5fa8}
 .nl{flex:1;overflow:auto;padding:4px 8px}
 .ni{padding:10px 12px;border-radius:10px;cursor:pointer;display:flex;align-items:center;gap:6px;margin-bottom:2px}
 .ni .tx{flex:1;min-width:0}
@@ -616,7 +622,7 @@ body.drawing .cmark .clabel{pointer-events:none}
 </header>
 <main>
   <aside id="side" class="closed">
-    <div class="side-h">ノート<span class="sp"></span><button class="bb" id="bNew">＋ 新規</button></div>
+    <div class="side-h">ノート<span class="sp"></span><button class="bb" id="bMerge" title="複数のノートを1つにまとめる">⧉ 結合</button><button class="bb" id="bNew">＋ 新規</button></div>
     <div class="nl" id="noteList"></div>
     <div class="side-io">
       <div class="cm" style="margin-bottom:6px">書き出し・読み込み（このアプリ専用の形式）</div>
@@ -727,8 +733,9 @@ async function retry(fn) {
 }
 // クラウド保存から届くデータは凍結（変更不可）されているため、必ず複製してから使う
 const dc = v => v == null ? v : JSON.parse(JSON.stringify(v));
+const utf8Len = s => new TextEncoder().encode(s).length;
 const Store = {
-  mode: 'local', col: null, inkParts: {},
+  mode: 'local', col: null, inkParts: {}, pageParts: {},
   async init() {
     const [db, user] = await Promise.all([cap('db'), cap('user')]);
     if (db && user) {
@@ -756,7 +763,16 @@ const Store = {
       const pn = all.find(d => d.kind === 'panel');
       const aux = {}; for (const d of all) if (d.kind === 'aux' && d.name) aux[d.name] = d.data;
       const panel = pn ? { rel: pn.rel || null, sum: pn.sum || null, comp: pn.comp || null } : null;
-      return { note: n.exists ? dc(n.data()) : null, ink: parts.flatMap(p => p.s || []), srcs, panel, aux };
+      const note = n.exists ? dc(n.data()) : null;
+      // 大きなノートは、ページを複数のドキュメント（id~pg0, ~pg1 …）に分けて保存している
+      const pp = all.filter(d => d.kind === 'pages').sort((a, b) => a.part - b.part);
+      if (note && note.pageParts > 0) {
+        const use = pp.filter(d => d.part < note.pageParts);
+        if (use.length === note.pageParts) note.pages = use.flatMap(d => d.p || []);
+        else { console.warn('missing page parts', use.length, note.pageParts); toast('ノートの一部のページを読み込めませんでした'); }
+      }
+      this.pageParts[id] = note && note.pageParts > 0 ? note.pageParts : 0;
+      return { note, ink: parts.flatMap(p => p.s || []), srcs, panel, aux };
     }
     let note = null, ink = [];
     try { note = JSON.parse(storageGet('inknote:n:' + id) || 'null'); } catch {}
@@ -769,7 +785,27 @@ const Store = {
   },
   async saveNote(n) {
     const body = { kind: 'note', id: n.id, title: n.title, subtitle: n.subtitle, no: n.no || '', date: n.date || '', body: n.body, pages: n.pages || null, imasks: n.imasks || [], pad: n.pad || 0, rule: n.rule || 6, created: n.created, updated: n.updated };
-    if (this.mode === 'cloud') return retry(() => this.col.doc(n.id).set(body));
+    if (this.mode === 'cloud') {
+      // 1つのドキュメントには上限（Cloudflare 約1MB・Firestore 1MiB）があるため、大きいノートはページを分けて保存する
+      const prev = this.pageParts[n.id] || 0;
+      if (utf8Len(JSON.stringify(body)) <= 600000) {
+        await retry(() => this.col.doc(n.id).set({ ...body, pageParts: 0 }));
+        for (let i = 0; i < prev; i++) await retry(() => this.col.doc(n.id + '~pg' + i).delete());
+        this.pageParts[n.id] = 0; return;
+      }
+      const chunks = []; let c = [], size = 0;
+      for (const p of body.pages || []) {
+        const len = utf8Len(JSON.stringify(p));
+        if (len > 900000) throw { code: 'too_large', message: `1ページの内容が大きすぎます（${Math.round(len / 1024)}KB）。改ページでページを分けてください` };
+        if (size + len > 300000 && c.length) { chunks.push(c); c = []; size = 0; }
+        c.push(p); size += len;
+      }
+      if (c.length) chunks.push(c);
+      for (let i = 0; i < chunks.length; i++) await retry(() => this.col.doc(n.id + '~pg' + i).set({ kind: 'pages', note: n.id, part: i, p: chunks[i] }));
+      await retry(() => this.col.doc(n.id).set({ ...body, body: '', pages: null, pageParts: chunks.length }));
+      for (let i = chunks.length; i < prev; i++) await retry(() => this.col.doc(n.id + '~pg' + i).delete());
+      this.pageParts[n.id] = chunks.length; return;
+    }
     if (!storageSet('inknote:n:' + n.id, JSON.stringify(body))) throw { code: 'quota_exceeded', message: '端末の保存容量が不足しています' };
     const idx = await this.list(); const i = idx.findIndex(x => x.id === n.id);
     const meta = { id: n.id, title: n.title, subtitle: n.subtitle, updated: n.updated };
@@ -938,6 +974,80 @@ function chooseRule() {
     actions: [{ label: 'キャンセル' }, { label: '作成', cls: 'pri', onClick: go }] });
 }
 $('#bNew').onclick = () => chooseRule();
+/* ---- ノートの結合：選んだ順にページをつなげて新しいノートを作る ---- */
+const RULE_NAME = { 6: '広め', 5: '標準', 4: '細かめ' };
+$('#bMerge').onclick = () => chooseMerge();
+async function chooseMerge() {
+  await flush();
+  if (notes.length < 2) { toast('結合するには2つ以上のノートが必要です'); return; }
+  const order = [];
+  const list = h('div', { class: 'mglist' });
+  const titleIn = h('input', { type: 'text', style: 'width:100%;box-sizing:border-box;padding:8px 10px;font-size:15px', placeholder: '結合後のタイトル（空なら1つ目のノートのタイトル）' });
+  const cDel = h('input', { type: 'checkbox' });
+  const info = h('div', { class: 'cm', style: 'margin-top:6px' });
+  const draw = () => {
+    list.textContent = '';
+    for (const n of notes) {
+      const k = order.indexOf(n.id);
+      list.append(h('button', { class: 'mgi' + (k >= 0 ? ' on' : ''), type: 'button', onclick: () => { if (k >= 0) order.splice(k, 1); else order.push(n.id); draw(); } },
+        h('span', { class: 'mgn', text: k >= 0 ? String(k + 1) : '' }),
+        h('span', { class: 'tx' }, h('b', { text: n.title || '無題のノート' }), h('span', { class: 'cm', text: (n.subtitle ? n.subtitle + ' · ' : '') + (n.updated ? fmtDate(n.updated) : '') }))));
+    }
+    info.textContent = order.length >= 2 ? `${order.length} 冊を、番号の順につなげます。` : '結合するノートを、つなげたい順にタップしてください（2冊以上）。';
+  };
+  draw();
+  const go = async () => {
+    if (order.length < 2) { toast('2冊以上選んでください'); return; }
+    md.close();
+    await mergeNotes([...order], titleIn.value.trim(), cDel.checked);
+  };
+  const md = modal({ title: 'ノートを結合', wide: true, body: h('div', null, list, info,
+    h('div', { style: 'margin-top:10px' }, titleIn),
+    h('label', { class: 'cm', style: 'display:flex;align-items:center;gap:6px;margin-top:8px' }, cDel, '結合したあと、元のノートを削除する'),
+    h('div', { class: 'cm', style: 'margin-top:6px', text: '本文・手書き・白塗り・参考資料を引き継ぎます。演習の成績・テストの履歴と、分析・関連内容の結果は引き継ぎません。罫線の幅が同じノートだけ結合できます。' })),
+    actions: [{ label: 'キャンセル' }, { label: '結合する', cls: 'pri', onClick: go }] });
+}
+async function mergeNotes(ids, title, delOrig) {
+  await flush();
+  const b = busy('ノートを結合中…');
+  let nid = null;
+  try {
+    const loaded = [];
+    for (const id of ids) {
+      const r = await Store.load(id);
+      if (!r.note) throw { message: 'ノートを読み込めませんでした' };
+      ensurePages(r.note); loaded.push(r);
+    }
+    const rules = loaded.map(r => Number(r.note.rule) || 6);
+    if (new Set(rules).size > 1) {
+      toast('罫線の幅が違うノートは結合できません（' + loaded.map((r, i) => `「${r.note.pages[0].title || '無題'}」${RULE_NAME[rules[i]] || rules[i] + 'mm'}`).join('・') + '）', 7000);
+      return;
+    }
+    const now = Date.now(), pages = [], ink = [], imasks = [], ss = [], seenSrc = new Set();
+    for (const r of loaded) {
+      const map = {}, first = r.note.pages[0].id;
+      for (const p of r.note.pages) { const np = { ...dc(p), id: uid('p') }; map[p.id] = np.id; pages.push(np); }
+      const pid = g => map[g] || map[first];
+      for (const s of r.ink || []) ink.push({ ...s, g: pid(s.g) });
+      for (const d of r.note.imasks || []) imasks.push({ ...d, g: pid(d.g) });
+      for (const s of r.srcs || []) { let x = dc(s); if (seenSrc.has(x.id)) x.id = uid('s'); seenSrc.add(x.id); ss.push(x); }
+    }
+    if (title) pages[0].title = title;
+    const p0 = pages[0];
+    const note = { id: uid('n'), title: p0.title || '', subtitle: p0.subtitle || '', no: p0.no || '', date: p0.date || '', body: p0.body, pages, imasks, pad: p0.pad || 0, rule: rules[0], created: now, updated: now };
+    await Store.saveNote(note);
+    await Store.saveInk(note.id, ink);
+    for (const s of ss) await Store.saveSource(note.id, s);
+    nid = note.id;
+    notes.push({ id: note.id, title: note.title, subtitle: note.subtitle, updated: now });
+    if (delOrig) {
+      for (const id of ids) { await Store.remove(id); notes = notes.filter(x => x.id !== id); }
+      if (cur && ids.includes(cur.id)) { clearTimeout(saveTimer); dirtyN = dirtyI = false; cur = null; }
+    }
+  } catch (e) { console.error(e); toast('結合できませんでした: ' + (e && e.message || e), 6000); }
+  finally { b.done(); }
+  if (nid) { renderList(); await openNote(nid); toast(`${ids.length} 冊を結合しました（${(cur && cur.pages || []).length} ページ）`); }
+}
 function confirmDelete(n) {
   const m = modal({ title: 'ノートを削除', body: h('div', { text: `「${n.title || '無題のノート'}」を削除します。この操作は取り消せません。` }),
     actions: [{ label: 'キャンセル' }, { label: '削除する', cls: 'pri', onClick: async () => {
