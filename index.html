@@ -417,6 +417,7 @@ body.drawing .cmark .clabel{pointer-events:none}
 .cdiff .cr{color:#d0261d;font-weight:700}
 .card.cdone{opacity:.55}
 .cmark.flash,#body .corr.flash{animation:cfl 1.2s ease-out}
+.cmark.cov{border-radius:4px}.cmark.cov .clabel{bottom:auto;top:-2px;left:auto;right:100%;margin:0 3px 0 0;background:none}
 @keyframes cfl{0%,40%{box-shadow:0 0 0 6px rgba(208,38,29,.35)}100%{box-shadow:0 0 0 0 rgba(208,38,29,0)}}
 .side-io{padding:10px 12px;border-top:1px solid var(--bd)}
 .side-io .bb{flex:1;white-space:nowrap}
@@ -2993,11 +2994,12 @@ function inkCount() {
   if (!cur || !cur.pages) return strokes.length;
   return cur.pages.reduce((a, p, i) => a + (i === pgi ? strokes.length : (inkByPage[p.id] || []).length), 0);
 }
-async function inkImagesAll(maxPages = 4) {
+async function inkImagesAll(maxPages = 4, only = null) {
   if (!cur) return [];
   capturePage();
   const out = [], k = U();
   for (const p of cur.pages) {
+    if (only && !only.includes(p.id)) continue;
     const list = inkByPage[p.id] || []; if (!list.length) continue;
     let x0 = Infinity, y0 = Infinity, x1 = 0, y1 = 0;
     for (const s of list) { const hw = s.w / 2; for (let i = 0; i < s.p.length; i += 3) { x0 = Math.min(x0, s.p[i] - hw); y0 = Math.min(y0, s.p[i + 1] - hw); x1 = Math.max(x1, s.p[i] + hw); y1 = Math.max(y1, s.p[i + 1] + hw); } }
@@ -5130,7 +5132,8 @@ function findTextRange(quote, wrong) {
 function renderCorr() {
   stripTypedCorr(bodyEl);
   corrLayer.textContent = '';
-  const c = pageCorr(); if (!c || !corrShow) { updateCorrBtn(); return; }
+  if (corrShow) renderCoverMarks();
+  const c = pageCorr(); if (!c || !corrShow) { typesetIn(corrLayer); updateCorrBtn(); return; }
   const k = U(); let num = 0;
   for (const it of c.items) {
     if (it.status === 'fixed' || it.status === 'ignored') { continue; }
@@ -5152,8 +5155,9 @@ function renderCorr() {
   updateCorrBtn();
 }
 function syncCorrPos() {
-  const c = pageCorr(); if (!c || !corrShow) return; const k = U();
-  for (const el of $$('.cmark', corrLayer)) { const it = c.items.find(i => i.id === el.dataset.cid); if (it) el.style.cssText = `left:${it.x / k}px;top:${it.y / k}px;width:${it.w / k}px;height:${it.h / k}px`; }
+  if (!corrShow) return; const c = pageCorr() || { items: [] }; const k = U();
+  for (const el of $$('.cmark.cov', corrLayer)) { const cv = pageCover(), it = cv && cv.points.find(i => i.id === el.dataset.kid); if (it) { el.style.left = it.x / k + 'px'; el.style.top = it.y / k + 'px'; el.style.width = it.w / k + 'px'; el.style.height = it.h / k + 'px'; } }
+  for (const el of $$('.cmark:not(.cov)', corrLayer)) { const it = c.items.find(i => i.id === el.dataset.cid); if (it) el.style.cssText = `left:${it.x / k}px;top:${it.y / k}px;width:${it.w / k}px;height:${it.h / k}px`; }
 }
 function updateCorrBtn() { const n = openItems().length, b = $('#tabs [data-tab=proof] .tl'); if (b) b.textContent = n ? `添削（${n}）` : '添削'; }
 function corrDetail(id) {
@@ -5171,10 +5175,12 @@ function jumpCorr(id) {
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
 }
-corrLayer.addEventListener('click', e => { const l = e.target.closest('.clabel'); if (l) { e.stopPropagation(); corrDetail(l.dataset.cid); } });
-bodyEl.addEventListener('click', e => { const f = e.target.closest && e.target.closest('.corrfix,.corr'); if (f && mode !== 'mask' && mode !== 'check') { e.preventDefault(); corrDetail(f.dataset.cid); } });
+corrLayer.addEventListener('click', e => { const l = e.target.closest('.clabel'); if (l) { e.stopPropagation(); if (l.dataset.kid) coverDetail(l.dataset.kid); else corrDetail(l.dataset.cid); } });
+bodyEl.addEventListener('click', e => { const f = e.target.closest && e.target.closest('.corrfix,.corr'); if (f && mode !== 'mask' && mode !== 'check') { e.preventDefault(); if (f.dataset.kid) coverDetail(f.dataset.kid); else corrDetail(f.dataset.cid); } });
 // ---- 添削タブ ----
 function renderProofTab(body) {
+  body.append(segPick([['err', '間違いチェック'], ['cover', '網羅チェック']], proofMode, k => { proofMode = k; renderPanel(); }), h('div', { style: 'height:8px' }));
+  if (proofMode === 'cover') { renderCoverTab(body); return; }
   const tsel = segPick([['ink', '手書き'], ['text', 'キーボード入力'], ['both', '両方']], proofOpt.target, k => { proofOpt.target = k; renderPanel(); });
   const ck = (key, lab) => { const c = h('input', { type: 'checkbox', checked: proofOpt.kinds[key] }); c.onchange = () => { proofOpt.kinds[key] = c.checked; }; return h('label', null, c, lab); };
   const sh = h('input', { type: 'checkbox', checked: corrShow }); sh.onchange = () => { corrShow = sh.checked; storageSet('inknote:corrShow', corrShow ? '1' : '0'); renderCorr(); };
@@ -5217,6 +5223,174 @@ function renderProofTab(body) {
   if (tr.length) body.append(h('div', { class: 'sec', text: '間違いの種類' }), bar(tr, t => CTYPES[t] || '#d0261d'));
   const pr = [...pairs.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
   if (pr.length) body.append(h('div', { class: 'sec', text: 'よくある間違い' }), bar(pr, () => '#c0533f'));
+}
+
+
+/* ---- 添削：網羅チェック（同じ文書のほかのページの内容を、このページに書けているか） ---- */
+let proofMode = 'err', coverPages = '';
+const COV = { ok: ['書けている', '#2f8a4a', '✓'], part: ['不十分', '#d08a1f', '△'], wrong: ['誤り', '#b4232a', '×'], miss: ['書けていない', '#8a8478', '−'] };
+const pageCover = () => { const p = pageObj(); return p && p.cover ? p.cover : null; };
+// 「1-3, 5」→ [1,2,3,5]（このページは除く。空欄なら他のすべてのページ）
+function parsePages(s, total, self) {
+  const out = new Set(), t = String(s || '').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[〜～ー−–—]/g, '-').replace(/[、，,\s]+/g, ',');
+  if (!t.replace(/,/g, '')) { for (let i = 1; i <= total; i++) if (i !== self) out.add(i); return { pages: [...out] }; }
+  for (const part of t.split(',').filter(Boolean)) {
+    const m = part.match(/^(\d+)(?:-(\d+))?$/);
+    if (!m) return { error: `ページ番号の書き方がわかりません：「${part}」（例：1-3, 5）` };
+    let a = +m[1], b = m[2] ? +m[2] : a; if (a > b) [a, b] = [b, a];
+    if (a < 1 || b > total) return { error: `ページ番号は 1〜${total} で指定してください` };
+    for (let i = a; i <= b; i++) if (i !== self) out.add(i);
+  }
+  if (!out.size) return { error: 'このページ以外のページを指定してください' };
+  return { pages: [...out].sort((x, y) => x - y) };
+}
+async function runCover() {
+  if (!sample) { toast('AIが使えません（サーバーでAIが設定されていません）'); return; }
+  if (!cur || !cur.pages || cur.pages.length < 2) { toast('網羅チェックには2ページ以上の文書が必要です（改ページでページを分けてください）'); return; }
+  capturePage();
+  const self = pgi + 1, pr = parsePages(coverPages, cur.pages.length, self);
+  if (pr.error) { toast(pr.error, 5000); return; }
+  const refs = pr.pages, roots = pageRoots();
+  const doInk = proofOpt.target !== 'text', doText = proofOpt.target !== 'ink';
+  // 参照ページの内容（本文＋手書きの画像）
+  const refText = refs.map(n => { const { root, live, p } = roots[n - 1]; const body = [p.title || '', p.subtitle || '', rootText(root, live)].filter(s => s && s.trim()).join('\n'); return `【${n}ページ】\n${body.trim() || '（キーボード入力の本文なし）'}`; }).join('\n\n');
+  const refInkIds = refs.map(n => cur.pages[n - 1].id).filter(id => (inkByPage[id] || []).length);
+  const refInkPages = refs.filter(n => (inkByPage[cur.pages[n - 1].id] || []).length);
+  if (refInkIds.length && !imgAI) toast('このサーバーのAIは画像に対応していないため、参照ページの手書きは含められません', 5000);
+  const refImgs = refInkIds.length && imgAI ? await inkImagesAll(6, refInkIds) : [];
+  if (refText.replace(/【\d+ページ】|（キーボード入力の本文なし）|\s/g, '').length < 20 && !refImgs.length) { toast('指定したページに内容がありません'); return; }
+  // このページの内容
+  const typed = doText ? [titleEl.innerText, subEl.innerText, rootText(bodyEl, true)].filter(s => s && s.trim()).join('\n').trim() : '';
+  let bands = doInk ? inkBands() : [];
+  if (doInk && bands.length && !imgAI) { toast('このサーバーのAIは画像に対応していません'); return; }
+  let whole = null;
+  if (bands.length > 8) { whole = await inkImagesAll(1, [pageObj().id]); bands = []; }
+  const myImgs = whole || await Promise.all(bands.map(bandImage));
+  if (!typed && !myImgs.length) { toast(doInk && !doText ? 'このページに手書きがありません' : 'このページに内容がありません'); return; }
+  const nMy = myImgs.length, chars = refText.length + refImgs.length * 600;
+  const target = Math.max(6, Math.min(60, Math.round(chars / 120)));
+  let r;
+  try {
+    r = await askJSON(`学習者が、ノートの別のページ（参照ページ）の内容を、このページに${doInk && doText ? '手書きやキーボード入力で' : doInk ? '手書きで' : 'キーボード入力で'}まとめ直しました（何も見ずに思い出して書いた可能性があります）。参照ページの内容を、このページでどれだけ網羅できているかを判定してください。出力は JSON オブジェクトのみ。
+{"transcript":"このページの手書きの読み取り（手書きがなければ空）","points":[{"point":"参照ページの要点（1文・40字以内）","page":参照ページの番号,"st":"ok か part か wrong か miss","note":"part・wrong・miss のとき：足りない内容・誤り・本来の内容（1文）","img":このページの画像の番号（書かれている場所。ないときは 0）,"bbox":[x,y,w,h],"quote":"キーボード入力の本文に書かれているとき、その部分を本文からそのまま（10〜30字）"}]}
+- まず参照ページから、覚えておくべき要点（用語・定義・事実・数値・公式・関係・手順など）を漏れなく挙げる（目安 ${target} 個。参照ページの最初から最後までまんべんなく）。要点は参照ページに書かれていることだけ。
+- 要点ごとに、このページの内容と照らして判定する：ok＝要点の中身が書けている（言い回しや順序は違ってよい）／part＝一部だけ・あいまい・大事な語や条件が欠けている／wrong＝書いてあるが内容が誤っている／miss＝書かれていない。
+- img と bbox は、ok・part・wrong のとき、このページの画像のうち書かれている場所（画像の幅・高さに対する割合 0〜1、左上原点）。本文に書かれているときは quote を使う。
+- 画像の順番：最初の ${nMy} 枚がこのページの手書き${nMy ? `（画像1〜${nMy}${whole ? '。ページ全体' : '。上から順'}）` : '（なし）'}、その後の ${refImgs.length} 枚が参照ページの手書き${refImgs.length ? `（順に ${refInkPages.join('・')} ページ）` : ''}。
+- 字のきれいさや書き方の好みは判定に含めない。
+参照ページ（本文）:
+<<<
+${refText.slice(0, 40000)}
+>>>
+このページ（${self}ページ）のキーボード入力の本文:
+<<<
+${(typed || '（なし）').slice(0, 20000)}
+>>>`, { images: [...myImgs, ...refImgs].length ? [...myImgs, ...refImgs] : undefined, tier: 'complex', label: '網羅できているかをチェック中…' });
+  } catch (e) { aiError(e); return; }
+  const k = U(), points = [];
+  for (const x of (Array.isArray(r.points) ? r.points : [])) {
+    if (!x || !x.point) continue;
+    const st = COV[x.st] ? x.st : 'miss';
+    const it = { id: uid('v'), point: String(x.point), page: refs.includes(Number(x.page)) ? Number(x.page) : null, st, note: String(x.note || '') };
+    const im = Number(x.img) || 0;
+    if (st !== 'miss' && !whole && im >= 1 && im <= bands.length && validBox(x.bbox)) {
+      const b = bands[im - 1], bw = b.x1 - b.x0, bh = b.y1 - b.y0, [bx, by, w, hh] = x.bbox;
+      Object.assign(it, { x: Math.round((b.x0 + bx * bw) * k), y: Math.round((b.y0 + by * bh) * k), w: Math.round(w * bw * k), h: Math.round(hh * bh * k) });
+    } else if (st !== 'miss' && x.quote) it.quote = String(x.quote);
+    points.push(it);
+  }
+  if (!points.length) { toast('判定できませんでした。もう一度お試しください'); return; }
+  const p = pageObj();
+  p.cover = { at: Date.now(), refs, target: proofOpt.target, points, transcript: String(r.transcript || '').slice(0, 4000) };
+  const c = coverStat(p.cover);
+  study.coverHist = [{ at: p.cover.at, page: self, refs, n: c.n, ok: c.ok, part: c.part, wrong: c.wrong, miss: c.miss }, ...(study.coverHist || [])].slice(0, 100);
+  saveStudy(); markDirty('note');
+  corrShow = true; storageSet('inknote:corrShow', '1');
+  renderCorr(); if (activeTab !== 'proof') openTab('proof'); else renderPanel();
+  toast(`網羅率 ${c.pct}%（${c.n}項目中 書けている ${c.ok}・不十分 ${c.part}・誤り ${c.wrong}・書けていない ${c.miss}）`, 5000);
+}
+function coverStat(cv) {
+  const ps = cv.points, cnt = s => ps.filter(x => x.st === s).length;
+  const n = ps.length, ok = cnt('ok'), part = cnt('part'), wrong = cnt('wrong'), miss = cnt('miss');
+  return { n, ok, part, wrong, miss, pct: n ? Math.round((ok + part * 0.5) / n * 100) : 0 };
+}
+const pageRangeText = refs => { const out = []; for (let i = 0; i < refs.length; i++) { let j = i; while (j + 1 < refs.length && refs[j + 1] === refs[j] + 1) j++; out.push(j > i ? `${refs[i]}〜${refs[j]}` : String(refs[i])); i = j; } return out.join('・'); };
+// 文書内の印（書けているところに ✓・△・×）
+function renderCoverMarks() {
+  const cv = pageCover(); if (!cv) return;
+  const k = U();
+  cv.points.forEach((it, i) => {
+    if (it.st === 'miss') return;
+    const [, col, sym] = COV[it.st], lab = `${sym}${i + 1}`;
+    if (it.w) {
+      corrLayer.append(h('div', { class: 'cmark cov', style: `left:${it.x / k}px;top:${it.y / k}px;width:${it.w / k}px;height:${it.h / k}px;border:1.5px solid ${col}55;background:${col}12`, dataset: { kid: it.id } },
+        h('span', { class: 'clabel', style: `color:${col}`, dataset: { kid: it.id } }, h('b', { class: 'cnum', style: `background:${col}`, text: lab }))));
+    } else if (it.quote) {
+      const rg = findTextRange(it.quote, it.quote); if (!rg) return;
+      const sp = h('span', { class: 'corr cov', dataset: { kid: it.id }, style: `text-decoration:underline solid ${col};text-decoration-thickness:2px` });
+      try { rg.surroundContents(sp); } catch { return; }
+      sp.after(h('span', { class: 'corrfix', contenteditable: 'false', dataset: { kid: it.id }, style: `color:${col}` }, h('b', { class: 'cnum', style: `background:${col}`, text: lab })));
+    }
+  });
+}
+function coverDetail(id) {
+  const cv = pageCover(); const i = cv ? cv.points.findIndex(x => x.id === id) : -1; if (i < 0) return;
+  const it = cv.points[i], [lab, col] = COV[it.st];
+  const m = modal({ title: `網羅チェック ${i + 1} — ${lab}`, body: typesetIn(h('div', null,
+    h('p', null, h('span', { class: 'tag', style: `background:${col}`, text: lab }), ' ', it.page ? h('span', { class: 'cm', text: `${it.page}ページの内容` }) : null),
+    h('p', { style: 'font-weight:700', text: it.point }),
+    it.note ? h('p', { text: it.note }) : null)),
+    actions: [it.page ? { label: `${it.page}ページを開く`, onClick: () => { m.close(); goPage(it.page - 1); } } : null, { label: '閉じる', cls: 'pri' }].filter(Boolean) });
+}
+function renderCoverTab(body) {
+  const total = cur && cur.pages ? cur.pages.length : 1, self = pgi + 1;
+  const tsel = segPick([['ink', '手書き'], ['text', 'キーボード入力'], ['both', '両方']], proofOpt.target, k => { proofOpt.target = k; renderPanel(); });
+  const pin = h('input', { type: 'text', value: coverPages, placeholder: '例：1-3, 5（空欄なら他のすべてのページ）', style: 'width:100%;box-sizing:border-box;padding:7px 9px;font-size:15px' });
+  const hint = h('div', { class: 'cm', style: 'margin-top:4px' });
+  const upd = () => { coverPages = pin.value; const r = parsePages(pin.value, total, self); hint.textContent = r.error ? r.error : `対象：${pageRangeText(r.pages)} ページ（全 ${total} ページ。今は ${self} ページ目）`; hint.style.color = r.error ? '#b4232a' : ''; };
+  pin.oninput = upd; upd();
+  const sh = h('input', { type: 'checkbox', checked: corrShow }); sh.onchange = () => { corrShow = sh.checked; storageSet('inknote:corrShow', corrShow ? '1' : '0'); renderCorr(); };
+  body.append(
+    h('div', { class: 'hint', text: '今表示しているページに、同じ文書のほかのページの内容をどれだけ書けているかを調べます（白紙に思い出して書いたまとめの確認などに）。書けている所には文書内に ✓・△・× を付けます。' }),
+    h('div', { class: 'cm', text: '内容を確かめるページ（ページ番号）' }), pin, hint,
+    h('div', { class: 'cm', style: 'margin-top:8px', text: 'このページのチェックする部分' }), tsel,
+    h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn ai', text: '✦ このページの網羅をチェック', disabled: !sample || total < 2, onclick: runCover }), h('label', { class: 'cm', style: 'display:flex;align-items:center;gap:4px' }, sh, '文書内に表示')),
+    total < 2 ? h('div', { class: 'cm', style: 'margin-top:4px', text: 'この文書は1ページだけです。改ページでページを分けると使えます。' }) : null);
+  const cv = pageCover();
+  body.append(h('div', { class: 'sec', text: 'このページの網羅チェックの結果' }));
+  if (!cv) { body.append(h('div', { class: 'empty', text: 'まだチェックしていません。' })); }
+  else {
+    const c = coverStat(cv);
+    body.append(h('div', { class: 'card' },
+      h('div', { class: 'row' }, h('b', { style: 'font-size:22px', text: `${c.pct}%` }), h('span', { class: 'cm', text: `${pageRangeText(cv.refs)} ページの内容 · ${fmtDate(cv.at)}` })),
+      h('div', { class: 'covbar' }, h('i', { class: 'o', style: `width:${c.ok / c.n * 100}%` }), h('i', { style: `width:${c.part / c.n * 100}%;background:${COV.part[1]}` }), h('i', { style: `width:${c.wrong / c.n * 100}%;background:${COV.wrong[1]}` })),
+      h('div', { class: 'cm', text: `${c.n}項目中　書けている ${c.ok}・不十分 ${c.part}・誤り ${c.wrong}・書けていない ${c.miss}` })));
+    const idx = new Map(cv.points.map((x, i) => [x.id, i + 1]));
+    for (const st of ['miss', 'wrong', 'part', 'ok']) {
+      const list = cv.points.filter(x => x.st === st); if (!list.length) continue;
+      const [lab, col, sym] = COV[st];
+      const sec = h('details', { class: 'pd', open: st !== 'ok' }, h('summary', { text: `${lab}（${list.length}）` }));
+      for (const it of list) sec.append(typesetIn(h('div', { class: 'card', style: `border-left:4px solid ${col}` },
+        h('div', { class: 'row', style: 'flex-wrap:nowrap' }, st !== 'miss' ? h('b', { class: 'cnum', style: `background:${col}`, text: `${sym}${idx.get(it.id)}` }) : null, h('b', { style: 'flex:1', text: it.point })),
+        it.note ? h('div', { class: 'cs', text: it.note }) : null,
+        h('div', { class: 'row', style: 'margin-top:4px' },
+          it.page ? h('button', { class: 'bb', text: `${it.page}ページを見る`, onclick: () => goPage(it.page - 1) }) : null,
+          st !== 'miss' && (it.w || it.quote) ? h('button', { class: 'bb', text: '位置へ', onclick: () => jumpCover(it.id) }) : null))));
+      body.append(sec);
+    }
+    if (cv.transcript) body.append(h('details', { class: 'paste' }, h('summary', { text: '手書きの読み取り結果を表示' }), h('div', { class: 'srcText', text: cv.transcript })));
+  }
+  const hist = study.coverHist || [];
+  if (hist.length) {
+    body.append(h('div', { class: 'sec', text: `網羅チェックの履歴（${hist.length}回）` }));
+    for (const r of hist.slice(0, 10)) body.append(h('div', { class: 'cm', style: 'padding:3px 0', text: `${fmtDate(r.at)} · ${r.page}ページ ← ${pageRangeText(r.refs)}ページ · ${Math.round((r.ok + r.part * 0.5) / Math.max(1, r.n) * 100)}%（${r.n}項目中 ✓${r.ok} △${r.part} ×${r.wrong} −${r.miss}）` }));
+  }
+}
+function jumpCover(id) {
+  const el = corrLayer.querySelector(`.cmark[data-kid="${id}"]`) || bodyEl.querySelector(`.corr[data-kid="${id}"]`);
+  if (!el) { toast(corrShow ? '文書内の位置が見つかりません（本文が変わった可能性があります）' : '「文書内に表示」をオンにしてください'); return; }
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
 }
 
 /* ========== 書き出し・読み込み（このアプリ専用のバックアップ形式） ========== */
